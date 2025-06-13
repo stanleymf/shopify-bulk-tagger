@@ -10,6 +10,7 @@ A powerful web application for automating customer tagging in Shopify stores bas
 - **Real-time Updates**: Monitor segment changes and apply rules automatically
 - **Batch Operations**: Efficiently process large numbers of customers with rate limiting
 - **Dry Run Mode**: Test rules without applying changes to your store
+- **🔐 Basic Authentication**: Secure access control using HTTP Basic Authentication
 
 ### User Interface
 - **Clean Dashboard**: Klaviyo-inspired design with clear segment overview
@@ -24,19 +25,42 @@ A powerful web application for automating customer tagging in Shopify stores bas
 - **Build Tool**: Vite
 - **Deployment**: Cloudflare Workers
 - **API Integration**: Shopify Admin API (2024-01)
+- **Authentication**: HTTP Basic Authentication
 
 ## 📋 Prerequisites
 
 - Node.js 18+ and pnpm
 - Shopify Partner account
 - Shopify store with customer segments
+- Cloudflare account (for deployment)
+
+## 🔐 Authentication Setup
+
+The application uses HTTP Basic Authentication to secure access. Configure your credentials:
+
+### Environment Variables
+```bash
+USERNAME=admin                    # Username for basic auth
+PASSWORD=your-secure-password     # Password for basic auth
+REALM=Bulk-Tagger Admin          # Authentication realm (optional)
+```
+
+### Setting Up Secrets
+```bash
+# Set username and password as Cloudflare Workers secrets
+wrangler secret put USERNAME
+wrangler secret put PASSWORD
+wrangler secret put REALM
+```
+
+For detailed authentication setup, see [Authentication Setup Guide](docs/AUTHENTICATION_SETUP.md).
 
 ## 🚀 Quick Start
 
 ### 1. Clone the Repository
 ```bash
-git clone <repository-url>
-cd Bulk-Tagger
+git clone https://github.com/stanleymf/shopify-bulk-tagger.git
+cd shopify-bulk-tagger
 ```
 
 ### 2. Install Dependencies
@@ -44,19 +68,22 @@ cd Bulk-Tagger
 pnpm install
 ```
 
-### 3. Development
+### 3. Configure Authentication
+Set up your authentication credentials as described above.
+
+### 4. Development
 ```bash
 pnpm dev
 ```
 
 The application will be available at `http://localhost:5173`
 
-### 4. Build for Production
+### 5. Build for Production
 ```bash
 pnpm build
 ```
 
-### 5. Deploy to Cloudflare Workers
+### 6. Deploy to Cloudflare Workers
 ```bash
 pnpm deploy
 ```
@@ -127,18 +154,26 @@ THEN [Add/Remove] tag [Tag Name]
 - Manages background processing queue
 - Handles error recovery and retry logic
 
+#### Basic Authentication (`src/lib/basic-auth.ts`)
+- HTTP Basic Authentication implementation
+- Secure credential validation
+- Session management and logout functionality
+
 ### Data Flow
 
-1. **Segment Sync**: Fetch segments from Shopify → Update local cache
-2. **Rule Execution**: Get segment customers → Apply tag operations → Update customers
-3. **Background Processing**: Queue rules → Process in batches → Handle errors
+1. **Authentication**: Basic auth validates user access
+2. **Segment Sync**: Fetch segments from Shopify → Update local cache
+3. **Rule Execution**: Get segment customers → Apply tag operations → Update customers
+4. **Background Processing**: Queue rules → Process in batches → Handle errors
 
 ## 🔒 Security & Privacy
 
-- **OAuth 2.0**: Secure authentication with Shopify
+- **Basic Authentication**: HTTP Basic Auth for application access
+- **OAuth 2.0**: Secure Shopify store authentication
 - **Minimal Scopes**: Only request necessary API permissions
 - **Rate Limiting**: Respect Shopify API limits
 - **Data Privacy**: Only access customer data needed for tagging
+- **Timing-Safe Comparison**: Prevent timing attacks in authentication
 
 ## 📊 Performance
 
@@ -161,14 +196,28 @@ pnpm lint
 pnpm format
 ```
 
+### Authentication Testing
+```bash
+# Test without authentication (should return 401)
+curl -i https://your-worker.your-subdomain.workers.dev/dashboard
+
+# Test with authentication
+curl -i -u admin:your-password https://your-worker.your-subdomain.workers.dev/dashboard
+
+# Test logout
+curl -i -u admin:your-password https://your-worker.your-subdomain.workers.dev/logout
+```
+
 ### API Testing
 - Use dry run mode to test rules without applying changes
 - Monitor API response times and error rates
 - Test with development Shopify store
 
-## 📝 API Documentation
+## 📝 Documentation
 
-Comprehensive API documentation is available in `docs/SHOPIFY_API_INTEGRATION.md`
+- [Authentication Setup Guide](docs/AUTHENTICATION_SETUP.md) - Basic auth configuration
+- [Shopify API Integration](docs/SHOPIFY_API_INTEGRATION.md) - API documentation
+- [Contributing Guide](CONTRIBUTING.md) - Development guidelines
 
 ## 🤝 Contributing
 
