@@ -1,8 +1,14 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "prj_01jxh9qp9xfzwbernshh9sn5h6",
+  "name": "bulk-tagger",
   "main": "worker/index.ts",
-  "compatibility_date": "2025-06-10",
+  "compatibility_date": "2024-01-15",
+  "compatibility_flags": ["nodejs_compat"],
+  "env": {
+    "USERNAME": "admin",
+    "PASSWORD": "your-secure-password-here",
+    "REALM": "Bulk-Tagger Admin"
+  },
   "assets": {
     "not_found_handling": "single-page-application"
   },

@@ -13,6 +13,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Analytics dashboard for tag operations
 - Bulk rule import/export functionality
 
+## [1.1.0] - 2024-01-15
+
+### Added
+- Basic authentication system using Cloudflare Workers
+- Secure access control for the application
+- Environment-based username and password configuration
+- Timing-safe authentication comparison for security
+- Logout functionality with proper session invalidation
+- Authentication middleware for protected routes
+
+### Security Enhancements
+- HTTP Basic Authentication implementation
+- Timing-safe string comparison using crypto.subtle.timingSafeEqual
+- Secure password storage using Cloudflare Workers secrets
+- Proper HTTP 401 responses with WWW-Authenticate headers
+- Cache control headers to prevent credential caching
+
+### Technical Details
+- Cloudflare Workers basic auth integration
+- Environment variable configuration for credentials
+- Secure credential validation and session management
+- Integration with existing Shopify OAuth flow
+
 ## [1.0.0] - 2024-01-15
 
 ### 🎉 First Major Release
