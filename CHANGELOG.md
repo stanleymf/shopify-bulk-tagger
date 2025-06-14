@@ -5,6 +5,40 @@ All notable changes to the Bulk-Tagger project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0] - 2024-12-19
+
+### Added
+- **🛑 Bulk Operation Cancellation**: Complete cancellation system for stopping running bulk tagging operations
+  - **Stop Operation Button**: Red "Stop Operation" button in background jobs UI with confirmation dialog
+  - **Force Stop**: Quick "×" button for immediate termination without confirmation
+  - **Graceful Cancellation**: Operations check for cancellation signals between batches and customers
+  - **Real-time Stopping**: Operations stop immediately when cancellation is detected
+  - **Status Tracking**: Cancelled jobs show "cancelled" status with partial results
+  - **Progress Preservation**: Shows how many customers were processed before cancellation
+
+### Enhanced
+- **Background Jobs System**: Extended with comprehensive cancellation support
+  - Added `cancelled` status to job states
+  - Cancellation signals tracked separately from job status
+  - Enhanced job completion handling with cancellation cleanup
+  - Force stop functionality for immediate termination
+  - Improved error handling for cancelled operations
+
+### Technical Implementation
+- **Cancellation Checker**: Function passed through all bulk operation layers
+  - `bulkAddTagsToSegment()` and `bulkRemoveTagsFromSegment()` accept cancellation checker
+  - GraphQL batch methods check for cancellation before each batch and customer
+  - Cancellation signals stored in `BackgroundJobsService` with automatic cleanup
+  - Multiple cancellation checkpoints throughout the operation pipeline
+
+### User Experience
+- **Two Cancellation Options**:
+  - **"Stop Operation"**: Graceful stop with confirmation dialog and success message
+  - **"×" (Force Stop)**: Immediate termination for emergency situations
+- **Clear Feedback**: Success messages when operations are stopped
+- **Preserved Progress**: See exactly how much work was completed before stopping
+- **No Data Loss**: Partial results are saved and displayed in job history
+
 ## [Unreleased]
 
 ### Planned Features

@@ -1001,7 +1001,8 @@ class ShopifyAPIService {
   async bulkAddTagsToSegment(
     segmentId: number, 
     tagsToAdd: string[], 
-    onProgress?: (current: number, total: number, skipped: number, message: string) => void
+    onProgress?: (current: number, total: number, skipped: number, message: string) => void,
+    cancellationChecker?: () => boolean
   ): Promise<{
     success: boolean;
     processedCount: number;
@@ -1016,10 +1017,20 @@ class ShopifyAPIService {
       throw new Error('No tags provided to add');
     }
 
+    // Check for cancellation before starting
+    if (cancellationChecker && cancellationChecker()) {
+      return {
+        success: false,
+        processedCount: 0,
+        skippedCount: 0,
+        errors: ['Operation cancelled before starting']
+      };
+    }
+
     try {
       // Try GraphQL first, fallback to REST if it fails
       try {
-        return await this.bulkAddTagsToSegmentGraphQL(segmentId, tagsToAdd, onProgress);
+        return await this.bulkAddTagsToSegmentGraphQL(segmentId, tagsToAdd, onProgress, cancellationChecker);
       } catch (graphqlError) {
         console.warn('GraphQL bulk tagging failed, trying REST API fallback:', graphqlError);
         return await this.bulkAddTagsToSegmentREST(segmentId, tagsToAdd, onProgress);
@@ -1036,7 +1047,8 @@ class ShopifyAPIService {
   async bulkRemoveTagsFromSegment(
     segmentId: number, 
     tagsToRemove: string[], 
-    onProgress?: (current: number, total: number, skipped: number, message: string) => void
+    onProgress?: (current: number, total: number, skipped: number, message: string) => void,
+    cancellationChecker?: () => boolean
   ): Promise<{
     success: boolean;
     processedCount: number;
@@ -1051,10 +1063,20 @@ class ShopifyAPIService {
       throw new Error('No tags provided to remove');
     }
 
+    // Check for cancellation before starting
+    if (cancellationChecker && cancellationChecker()) {
+      return {
+        success: false,
+        processedCount: 0,
+        skippedCount: 0,
+        errors: ['Operation cancelled before starting']
+      };
+    }
+
     try {
       // Try GraphQL first, fallback to REST if it fails
       try {
-        return await this.bulkRemoveTagsFromSegmentGraphQL(segmentId, tagsToRemove, onProgress);
+        return await this.bulkRemoveTagsFromSegmentGraphQL(segmentId, tagsToRemove, onProgress, cancellationChecker);
       } catch (graphqlError) {
         console.warn('GraphQL bulk tagging failed, trying REST API fallback:', graphqlError);
         return await this.bulkRemoveTagsFromSegmentREST(segmentId, tagsToRemove, onProgress);
@@ -1071,13 +1093,24 @@ class ShopifyAPIService {
   private async bulkAddTagsToSegmentGraphQL(
     segmentId: number, 
     tagsToAdd: string[], 
-    onProgress?: (current: number, total: number, skipped: number, message: string) => void
+    onProgress?: (current: number, total: number, skipped: number, message: string) => void,
+    cancellationChecker?: () => boolean
   ): Promise<{
     success: boolean;
     processedCount: number;
     skippedCount: number;
     errors: string[];
   }> {
+    // Check for cancellation before starting
+    if (cancellationChecker && cancellationChecker()) {
+      return {
+        success: false,
+        processedCount: 0,
+        skippedCount: 0,
+        errors: ['Operation cancelled before starting']
+      };
+    }
+
     // Get the official segment count first for accurate progress tracking
     onProgress?.(0, 0, 0, 'Getting official segment count...');
     let officialSegmentCount = 0;
@@ -1086,6 +1119,16 @@ class ShopifyAPIService {
       console.log(`Official segment count: ${officialSegmentCount}`);
     } catch (error) {
       console.warn('Could not get official segment count, will use search results count:', error);
+    }
+
+    // Check for cancellation after getting count
+    if (cancellationChecker && cancellationChecker()) {
+      return {
+        success: false,
+        processedCount: 0,
+        skippedCount: 0,
+        errors: ['Operation cancelled during initialization']
+      };
     }
 
     // Get customer IDs from the segment
@@ -1098,6 +1141,16 @@ class ShopifyAPIService {
         processedCount: 0,
         skippedCount: 0,
         errors: ['No customers found in this segment']
+      };
+    }
+
+    // Check for cancellation after getting customer IDs
+    if (cancellationChecker && cancellationChecker()) {
+      return {
+        success: false,
+        processedCount: 0,
+        skippedCount: 0,
+        errors: ['Operation cancelled after fetching customer list']
       };
     }
 
@@ -1117,7 +1170,7 @@ class ShopifyAPIService {
     }
 
     // Use batch processing for GraphQL (more reliable than bulk operations)
-    return await this.batchAddTags(customerIds, tagsToAdd, onProgress, totalForProgress);
+    return await this.batchAddTags(customerIds, tagsToAdd, onProgress, totalForProgress, cancellationChecker);
   }
 
   /**
@@ -1126,7 +1179,8 @@ class ShopifyAPIService {
   private async bulkRemoveTagsFromSegmentGraphQL(
     segmentId: number, 
     tagsToRemove: string[], 
-    onProgress?: (current: number, total: number, skipped: number, message: string) => void
+    onProgress?: (current: number, total: number, skipped: number, message: string) => void,
+    cancellationChecker?: () => boolean
   ): Promise<{
     success: boolean;
     processedCount: number;
@@ -1172,7 +1226,7 @@ class ShopifyAPIService {
     }
 
     // Use batch processing for GraphQL (more reliable than bulk operations)
-    return await this.batchRemoveTags(customerIds, tagsToRemove, onProgress, totalForProgress);
+    return await this.batchRemoveTags(customerIds, tagsToRemove, onProgress, totalForProgress, cancellationChecker);
   }
 
   /**
@@ -1384,7 +1438,13 @@ class ShopifyAPIService {
   /**
    * Batch process tag additions for GraphQL (smaller datasets)
    */
-  private async batchAddTags(customerIds: string[], tagsToAdd: string[], onProgress?: (current: number, total: number, skipped: number, message: string) => void, totalForProgress?: number): Promise<{
+  private async batchAddTags(
+    customerIds: string[], 
+    tagsToAdd: string[], 
+    onProgress?: (current: number, total: number, skipped: number, message: string) => void, 
+    totalForProgress?: number,
+    cancellationChecker?: () => boolean
+  ): Promise<{
     success: boolean;
     processedCount: number;
     skippedCount: number;
@@ -1399,11 +1459,27 @@ class ShopifyAPIService {
     onProgress?.(0, totalCustomers, 0, `Starting to add tags to ${customerIds.length} customers...`);
 
     for (let i = 0; i < customerIds.length; i += batchSize) {
+      // Check for cancellation before processing each batch
+      if (cancellationChecker && cancellationChecker()) {
+        onProgress?.(processedCount, totalCustomers, skippedCount, 'Operation cancelled by user');
+        return {
+          success: false,
+          processedCount,
+          skippedCount,
+          errors: [...errors, 'Operation cancelled by user']
+        };
+      }
+
       const batch = customerIds.slice(i, i + batchSize);
       
       // Process each customer in the batch
       await Promise.all(batch.map(async (customerId, index) => {
         try {
+          // Check for cancellation before processing each customer
+          if (cancellationChecker && cancellationChecker()) {
+            return; // Skip this customer if cancelled
+          }
+
           // First, get the customer's current tags to check if we need to add
           const customerQuery = `
             query getCustomer($id: ID!) {
@@ -1428,6 +1504,11 @@ class ShopifyAPIService {
               const currentProgress = i + index + 1;
               onProgress?.(currentProgress, totalCustomers, skippedCount, `Skipped customer ${currentProgress}/${totalCustomers} (already has tags)`);
               return;
+            }
+
+            // Check for cancellation before making the update
+            if (cancellationChecker && cancellationChecker()) {
+              return; // Skip this customer if cancelled
             }
 
             // Add only the tags that don't already exist
@@ -1500,7 +1581,7 @@ class ShopifyAPIService {
   /**
    * Batch process tag removals for GraphQL (smaller datasets)
    */
-  private async batchRemoveTags(customerIds: string[], tagsToRemove: string[], onProgress?: (current: number, total: number, skipped: number, message: string) => void, totalForProgress?: number): Promise<{
+  private async batchRemoveTags(customerIds: string[], tagsToRemove: string[], onProgress?: (current: number, total: number, skipped: number, message: string) => void, totalForProgress?: number, cancellationChecker?: () => boolean): Promise<{
     success: boolean;
     processedCount: number;
     skippedCount: number;

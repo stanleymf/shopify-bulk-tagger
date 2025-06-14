@@ -1,7 +1,7 @@
 export interface BackgroundJob {
   id: string;
   type: 'bulk_add_tags' | 'bulk_remove_tags';
-  status: 'running' | 'completed' | 'failed' | 'paused';
+  status: 'running' | 'completed' | 'failed' | 'paused' | 'cancelled';
   segmentId: number;
   segmentName: string;
   tags: string[];
@@ -20,6 +20,7 @@ export interface BackgroundJob {
   startTime: string;
   endTime?: string;
   lastUpdate: string;
+  isCancelled?: boolean; // Flag to signal cancellation to running operations
 }
 
 class BackgroundJobsService {
@@ -28,6 +29,7 @@ class BackgroundJobsService {
   private jobs: Map<string, BackgroundJob> = new Map();
   private activeJobId: string | null = null;
   private progressCallbacks: Map<string, (job: BackgroundJob) => void> = new Map();
+  private cancellationSignals: Map<string, boolean> = new Map(); // Track cancellation signals
 
   constructor() {
     this.loadJobsFromStorage();
@@ -109,6 +111,9 @@ class BackgroundJobsService {
     const job = this.jobs.get(jobId);
     if (!job) return;
 
+    // Clear cancellation signal
+    this.clearCancellationSignal(jobId);
+
     job.status = result.success ? 'completed' : 'failed';
     job.result = result;
     job.endTime = new Date().toISOString();
@@ -175,16 +180,91 @@ class BackgroundJobsService {
    */
   cancelJob(jobId: string): void {
     const job = this.jobs.get(jobId);
-    if (!job || job.status !== 'running') return;
+    if (!job || (job.status !== 'running' && job.status !== 'paused')) return;
 
-    job.status = 'paused';
+    // Set cancellation signal
+    this.cancellationSignals.set(jobId, true);
+    
+    // Update job status
+    job.status = 'cancelled';
+    job.isCancelled = true;
+    job.endTime = new Date().toISOString();
     job.lastUpdate = new Date().toISOString();
+    
+    // Set result if not already set
+    if (!job.result) {
+      job.result = {
+        success: false,
+        processedCount: job.progress.current,
+        skippedCount: job.progress.skipped,
+        errors: ['Operation cancelled by user']
+      };
+    }
     
     this.jobs.set(jobId, job);
     if (this.activeJobId === jobId) {
       this.activeJobId = null;
     }
     this.saveJobsToStorage();
+
+    // Notify progress callback
+    const callback = this.progressCallbacks.get(jobId);
+    if (callback) {
+      callback(job);
+    }
+  }
+
+  /**
+   * Check if a job has been cancelled
+   */
+  isJobCancelled(jobId: string): boolean {
+    return this.cancellationSignals.get(jobId) === true;
+  }
+
+  /**
+   * Clear cancellation signal (used when job completes)
+   */
+  clearCancellationSignal(jobId: string): void {
+    this.cancellationSignals.delete(jobId);
+  }
+
+  /**
+   * Force stop a job (immediate termination)
+   */
+  forceStopJob(jobId: string): void {
+    const job = this.jobs.get(jobId);
+    if (!job) return;
+
+    // Set cancellation signal
+    this.cancellationSignals.set(jobId, true);
+    
+    // Immediately mark as cancelled
+    job.status = 'cancelled';
+    job.isCancelled = true;
+    job.endTime = new Date().toISOString();
+    job.lastUpdate = new Date().toISOString();
+    job.progress.message = 'Operation stopped by user';
+    
+    if (!job.result) {
+      job.result = {
+        success: false,
+        processedCount: job.progress.current,
+        skippedCount: job.progress.skipped,
+        errors: ['Operation forcefully stopped by user']
+      };
+    }
+    
+    this.jobs.set(jobId, job);
+    if (this.activeJobId === jobId) {
+      this.activeJobId = null;
+    }
+    this.saveJobsToStorage();
+
+    // Notify progress callback
+    const callback = this.progressCallbacks.get(jobId);
+    if (callback) {
+      callback(job);
+    }
   }
 
   /**

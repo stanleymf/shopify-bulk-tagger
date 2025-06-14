@@ -316,7 +316,8 @@ export function Dashboard() {
           (current: number, total: number, skipped: number, message: string) => {
             // Update background job progress
             backgroundJobsService.updateJobProgress(jobId, current, total, skipped, message);
-          }
+          },
+          () => backgroundJobsService.isJobCancelled(jobId) // Cancellation checker
         );
       } else {
         result = await shopifyAPI.bulkRemoveTagsFromSegment(
@@ -325,7 +326,8 @@ export function Dashboard() {
           (current: number, total: number, skipped: number, message: string) => {
             // Update background job progress
             backgroundJobsService.updateJobProgress(jobId, current, total, skipped, message);
-          }
+          },
+          () => backgroundJobsService.isJobCancelled(jobId) // Cancellation checker
         );
       }
 
@@ -463,18 +465,37 @@ export function Dashboard() {
                       to "{activeJob.segmentName}"
                     </span>
                   </div>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => {
-                      backgroundJobsService.cancelJob(activeJob.id);
-                      setActiveJob(null);
-                      setJobHistory(backgroundJobsService.getAllJobs());
-                    }}
-                    className="h-6 w-6 p-0 text-red-600 hover:text-red-800"
-                  >
-                    ×
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => {
+                        if (confirm('Are you sure you want to stop this operation? This cannot be undone.')) {
+                          backgroundJobsService.cancelJob(activeJob.id);
+                          setActiveJob(null);
+                          setJobHistory(backgroundJobsService.getAllJobs());
+                          setSuccess('Bulk tagging operation stopped successfully');
+                        }
+                      }}
+                      className="text-xs px-3 py-1"
+                    >
+                      Stop Operation
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        backgroundJobsService.forceStopJob(activeJob.id);
+                        setActiveJob(null);
+                        setJobHistory(backgroundJobsService.getAllJobs());
+                        setSuccess('Background job terminated');
+                      }}
+                      className="h-6 w-6 p-0 text-gray-400 hover:text-gray-600"
+                      title="Force stop (immediate)"
+                    >
+                      ×
+                    </Button>
+                  </div>
                 </div>
                 
                 <div className="flex items-center justify-between mb-2">
