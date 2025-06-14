@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { useConfig } from "@/lib/config-context";
 import { shopifyAPI } from "@/lib/shopify-api";
+import { storage } from "@/lib/storage";
 
 export function Settings() {
   const { shopifyConfig, isConnected, updateConfig, clearConfig } = useConfig();
@@ -81,6 +82,10 @@ export function Settings() {
         accessToken: config.accessToken,
         isConnected: true,
       });
+      
+      // Debug storage after saving
+      console.log('Configuration saved, debugging storage...');
+      storage.debugStorage();
       
       setSuccess('Shopify store connected successfully! You can now sync customer segments.');
     } catch (err) {
@@ -166,6 +171,15 @@ export function Settings() {
     } catch (error) {
       setError('Failed to disconnect store');
     }
+  };
+
+  const handleDebugStorage = () => {
+    console.log('=== Manual Storage Debug ===');
+    storage.debugStorage();
+    console.log('Current config state:', config);
+    console.log('Context shopifyConfig:', shopifyConfig);
+    console.log('Context isConnected:', isConnected);
+    alert('Storage debug info logged to console. Press F12 to view.');
   };
 
   const formatDate = (dateString: string) => {
@@ -267,6 +281,16 @@ export function Settings() {
                   Disconnect Store
                 </Button>
               )}
+
+              <Button 
+                onClick={handleDebugStorage} 
+                variant="outline" 
+                size="sm" 
+                className="w-full text-gray-600 hover:text-gray-700"
+              >
+                <AlertCircle className="h-4 w-4 mr-2" />
+                Debug Storage
+              </Button>
             </div>
           </CardContent>
         </Card>

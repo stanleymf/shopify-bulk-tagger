@@ -32,38 +32,45 @@ export function ConfigProvider({ children }: ConfigProviderProps) {
   const loadConfig = () => {
     try {
       const config = storage.getShopifyConfig();
+      console.log('Config context: Loading config from storage:', config);
       if (config) {
         setShopifyConfig(config);
         
         // Initialize Shopify API if connected
         if (config.isConnected && config.shopDomain && config.accessToken) {
+          console.log('Config context: Initializing Shopify API with stored config');
           shopifyAPI.initialize(config.shopDomain, config.accessToken);
         }
+      } else {
+        console.log('Config context: No stored config found');
       }
     } catch (error) {
-      console.error('Failed to load configuration:', error);
+      console.error('Config context: Failed to load configuration:', error);
       setError('Failed to load saved configuration');
     }
   };
 
   const updateConfig = (config: Partial<ShopifyConfig>) => {
     try {
+      console.log('Config context: Updating config:', config);
       const updatedConfig = {
         ...shopifyConfig,
         ...config,
         updatedAt: new Date().toISOString(),
       } as ShopifyConfig;
 
+      console.log('Config context: Saving updated config to storage:', updatedConfig);
       storage.saveShopifyConfig(updatedConfig);
       setShopifyConfig(updatedConfig);
       setError(null);
 
       // Initialize API if connected
       if (updatedConfig.isConnected && updatedConfig.shopDomain && updatedConfig.accessToken) {
+        console.log('Config context: Initializing Shopify API with new config');
         shopifyAPI.initialize(updatedConfig.shopDomain, updatedConfig.accessToken);
       }
     } catch (error) {
-      console.error('Failed to update configuration:', error);
+      console.error('Config context: Failed to update configuration:', error);
       setError('Failed to save configuration');
     }
   };
