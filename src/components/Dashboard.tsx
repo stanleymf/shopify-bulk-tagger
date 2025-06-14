@@ -237,53 +237,87 @@ export function Dashboard() {
             </div>
           ) : (
             <div className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
                 {filteredSegments.map((segment) => (
-                  <div
+                  <Card
                     key={segment.id}
-                    className="border rounded-lg p-4 hover:shadow-md transition-shadow"
+                    className="hover:shadow-lg transition-all duration-200 border-gray-200 hover:border-gray-300"
                   >
-                    <div className="flex items-center justify-between mb-2">
-                      <h3 className="font-medium text-gray-900 truncate">{segment.name}</h3>
-                      <div className="flex items-center gap-2">
-                        {segment.customer_count !== undefined ? (
-                          <Badge variant="secondary">
-                            {segment.customer_count} customers
-                          </Badge>
-                        ) : (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleLoadCustomerCount(segment.id)}
-                            disabled={segment.is_loading_count}
-                            className="text-xs h-6 px-2"
-                          >
-                            {segment.is_loading_count ? (
-                              <>
-                                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                                Loading...
-                              </>
-                            ) : (
-                              <>
-                                <Hash className="h-3 w-3 mr-1" />
-                                Load Count
-                              </>
-                            )}
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                    <div className="text-sm text-gray-600 space-y-1">
-                      <div>ID: {segment.id}</div>
-                      {segment.query && (
-                        <div className="truncate" title={segment.query}>
-                          Query: {segment.query}
+                    <CardHeader className="pb-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-semibold text-gray-900 text-lg leading-tight mb-1">
+                            {segment.name}
+                          </h3>
+                          <div className="flex items-center gap-2 text-xs text-gray-500">
+                            <span>ID: {segment.id}</span>
+                          </div>
                         </div>
-                      )}
-                      <div>Created: {new Date(segment.created_at).toLocaleDateString()}</div>
-                      <div>Updated: {new Date(segment.updated_at).toLocaleDateString()}</div>
-                    </div>
-                  </div>
+                        <div className="flex-shrink-0">
+                          {segment.customer_count !== undefined ? (
+                            <Badge variant="secondary" className="bg-blue-50 text-blue-700 border-blue-200">
+                              <Users className="h-3 w-3 mr-1" />
+                              {segment.customer_count.toLocaleString()}
+                            </Badge>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleLoadCustomerCount(segment.id)}
+                              disabled={segment.is_loading_count}
+                              className="text-xs h-8 px-3 border-gray-300 hover:bg-gray-50"
+                            >
+                              {segment.is_loading_count ? (
+                                <>
+                                  <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                                  Loading...
+                                </>
+                              ) : (
+                                <>
+                                  <Hash className="h-3 w-3 mr-1" />
+                                  Load Count
+                                </>
+                              )}
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="pt-0">
+                      <div className="space-y-3">
+                        {segment.query && (
+                          <div className="bg-gray-50 rounded-md p-3">
+                            <div className="text-xs font-medium text-gray-700 mb-1">Query</div>
+                            <div className="text-sm text-gray-600 break-words">
+                              {segment.query}
+                            </div>
+                          </div>
+                        )}
+                        <div className="grid grid-cols-2 gap-3 text-xs">
+                          <div className="bg-white border border-gray-100 rounded-md p-2">
+                            <div className="font-medium text-gray-700 mb-1">Created</div>
+                            <div className="text-gray-600">
+                              {new Date(segment.created_at).toLocaleDateString('en-US', {
+                                month: 'short',
+                                day: 'numeric',
+                                year: 'numeric'
+                              })}
+                            </div>
+                          </div>
+                          <div className="bg-white border border-gray-100 rounded-md p-2">
+                            <div className="font-medium text-gray-700 mb-1">Updated</div>
+                            <div className="text-gray-600">
+                              {new Date(segment.updated_at).toLocaleDateString('en-US', {
+                                month: 'short',
+                                day: 'numeric',
+                                year: 'numeric'
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
                 ))}
               </div>
             </div>

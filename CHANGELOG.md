@@ -12,6 +12,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Analytics dashboard for tag operations
 - Bulk rule import/export functionality
 
+## [1.3.3] - 2025-01-14
+
+### Improved
+- **Enhanced Segment Card UI**: Complete redesign of segment cards for better readability
+- **No Text Truncation**: All segment names, queries, and information now display fully
+- **Better Layout**: Improved spacing, typography, and visual hierarchy
+- **Responsive Grid**: Better responsive behavior with proper breakpoints (lg:2 cols, xl:3 cols)
+- **Visual Enhancements**: 
+  - Larger, more readable segment names
+  - Query text in dedicated highlighted sections with word wrapping
+  - Cleaner date formatting (e.g., "Jan 15, 2024")
+  - Better customer count badges with icons
+  - Improved hover effects and transitions
+  - Organized information in structured sections
+
+### Technical
+- Replaced basic div cards with proper Card components
+- Added proper CardHeader and CardContent structure
+- Improved accessibility with better contrast and spacing
+- Enhanced mobile responsiveness
+
 ## [1.3.2] - 2025-01-14
 
 ### Fixed
