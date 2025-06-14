@@ -2,8 +2,8 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "bulk-tagger",
   "main": "worker/index.ts",
-  "compatibility_date": "2024-01-15",
-  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_date": "2024-09-23",
+  "compatibility_flags": ["nodejs_compat", "nodejs_compat_v2"],
   "env": {
     "USERNAME": "admin",
     "PASSWORD": "your-secure-password-here",

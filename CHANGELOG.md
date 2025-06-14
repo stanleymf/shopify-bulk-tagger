@@ -13,6 +13,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Analytics dashboard for tag operations
 - Bulk rule import/export functionality
 
+## [1.1.1] - 2024-01-15
+
+### Fixed
+- Cloudflare Vite plugin compatibility issue resolved
+- Updated compatibility date to "2024-09-23" in wrangler.jsonc
+- Added nodejs_compat_v2 compatibility flag
+- Development server now starts successfully on localhost:4321
+
+### Technical Details
+- Fixed Node.js compatibility mode error with Cloudflare Workers
+- Updated wrangler configuration for latest Cloudflare Vite plugin requirements
+- Development environment now fully functional
+
 ## [1.1.0] - 2024-01-15
 
 ### Added
