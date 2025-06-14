@@ -12,6 +12,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Analytics dashboard for tag operations
 - Bulk rule import/export functionality
 
+## [1.7.1] - 2024-12-19
+
+### Fixed
+- **CRITICAL BUG FIX**: GraphQL Customer ID Invalid Value Error
+  - Fixed double GID prefix issue in GraphQL customer update mutations
+  - Customer IDs from `getSegmentCustomerIds()` are already in GID format (`gid://shopify/Customer/123456`)
+  - Removed duplicate `gid://shopify/Customer/` prefix that was causing "Variable $id of type ID! was provided invalid value" errors
+  - Fixed in both `batchAddTags` and `batchRemoveTags` methods
+  - Bulk tagging operations now work correctly with GraphQL API
+
+### Technical Details
+- Updated GraphQL query variables to use customer IDs directly instead of adding extra GID prefix
+- Affects both customer tag queries and customer update mutations
+- Resolves bulk tagging failures that were showing multiple "Failed to update customer" errors
+
 ## [1.7.0] - 2024-12-19
 
 ### Added

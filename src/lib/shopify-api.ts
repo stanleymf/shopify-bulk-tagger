@@ -1370,7 +1370,7 @@ class ShopifyAPIService {
 
           const customerResponse = await this.graphqlQuery<{
             customer: { id: string; tags: string[] };
-          }>(customerQuery, { id: `gid://shopify/Customer/${customerId}` });
+          }>(customerQuery, { id: customerId });
 
           if (customerResponse.data?.customer) {
             const currentTags = customerResponse.data.customer.tags || [];
@@ -1409,7 +1409,7 @@ class ShopifyAPIService {
               };
             }>(mutation, {
               input: {
-                id: `gid://shopify/Customer/${customerId}`,
+                id: customerId,
                 tags: allTags
               }
             });
@@ -1486,7 +1486,7 @@ class ShopifyAPIService {
 
           const customerResponse = await this.graphqlQuery<{
             customer: { id: string; tags: string[] };
-          }>(customerQuery, { id: `gid://shopify/Customer/${customerId}` });
+          }>(customerQuery, { id: customerId });
 
           if (customerResponse.data?.customer) {
             const currentTags = customerResponse.data.customer.tags || [];
@@ -1525,7 +1525,7 @@ class ShopifyAPIService {
               };
             }>(mutation, {
               input: {
-                id: `gid://shopify/Customer/${customerId}`,
+                id: customerId,
                 tags: remainingTags
               }
             });
