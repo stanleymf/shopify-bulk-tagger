@@ -12,6 +12,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Analytics dashboard for tag operations
 - Bulk rule import/export functionality
 
+## [1.7.2] - 2024-12-19
+
+### Fixed
+- **Segment Count Discrepancy**: Fixed mismatch between displayed segment count and bulk operation progress
+  - Progress tracking now uses official `customerSegmentMembers` count instead of search results count
+  - Added discrepancy detection and logging when segment count differs from processable customers
+  - Background jobs now show accurate progress based on official segment count (e.g., 4,869) instead of search results (e.g., 7,656)
+  - Enhanced progress messages to distinguish between total segment customers and processable customers
+  - Improved console logging to help debug segment query translation issues
+
+### Technical Details
+- Modified `bulkAddTagsToSegmentGraphQL` and `bulkRemoveTagsFromSegmentGraphQL` to fetch official segment count first
+- Added `totalForProgress` parameter to batch processing methods for accurate progress tracking
+- Enhanced error handling when official segment count cannot be retrieved
+- Added warning logs when segment query translation produces different results than official count
+
+### User Experience
+- Progress bars now reflect the actual segment size shown in the UI
+- More accurate completion percentages during bulk operations
+- Better transparency about discrepancies between segment definition and processable customers
+
 ## [1.7.1] - 2024-12-19
 
 ### Fixed

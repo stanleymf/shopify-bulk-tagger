@@ -1078,8 +1078,18 @@ class ShopifyAPIService {
     skippedCount: number;
     errors: string[];
   }> {
+    // Get the official segment count first for accurate progress tracking
+    onProgress?.(0, 0, 0, 'Getting official segment count...');
+    let officialSegmentCount = 0;
+    try {
+      officialSegmentCount = await this.getSegmentCustomerCount(segmentId);
+      console.log(`Official segment count: ${officialSegmentCount}`);
+    } catch (error) {
+      console.warn('Could not get official segment count, will use search results count:', error);
+    }
+
     // Get customer IDs from the segment
-    onProgress?.(0, 0, 0, 'Fetching customer list from segment...');
+    onProgress?.(0, officialSegmentCount || 0, 0, 'Fetching customer list from segment...');
     const customerIds = await this.getSegmentCustomerIds(segmentId);
     
     if (!customerIds.length) {
@@ -1091,10 +1101,23 @@ class ShopifyAPIService {
       };
     }
 
-    onProgress?.(0, customerIds.length, 0, `Found ${customerIds.length} customers. Starting tag addition...`);
+    // Use official count if available, otherwise use search results count
+    const totalForProgress = officialSegmentCount > 0 ? officialSegmentCount : customerIds.length;
+    
+    // Log the discrepancy if there is one
+    if (officialSegmentCount > 0 && officialSegmentCount !== customerIds.length) {
+      console.warn(`⚠️  Segment count discrepancy detected:`);
+      console.warn(`   Official segment count: ${officialSegmentCount}`);
+      console.warn(`   Search results count: ${customerIds.length}`);
+      console.warn(`   Using official count (${officialSegmentCount}) for progress tracking`);
+      
+      onProgress?.(0, totalForProgress, 0, `Found ${customerIds.length} processable customers (${officialSegmentCount} total in segment). Starting tag addition...`);
+    } else {
+      onProgress?.(0, totalForProgress, 0, `Found ${customerIds.length} customers. Starting tag addition...`);
+    }
 
     // Use batch processing for GraphQL (more reliable than bulk operations)
-    return await this.batchAddTags(customerIds, tagsToAdd, onProgress);
+    return await this.batchAddTags(customerIds, tagsToAdd, onProgress, totalForProgress);
   }
 
   /**
@@ -1110,8 +1133,18 @@ class ShopifyAPIService {
     skippedCount: number;
     errors: string[];
   }> {
+    // Get the official segment count first for accurate progress tracking
+    onProgress?.(0, 0, 0, 'Getting official segment count...');
+    let officialSegmentCount = 0;
+    try {
+      officialSegmentCount = await this.getSegmentCustomerCount(segmentId);
+      console.log(`Official segment count: ${officialSegmentCount}`);
+    } catch (error) {
+      console.warn('Could not get official segment count, will use search results count:', error);
+    }
+
     // Get customer IDs from the segment
-    onProgress?.(0, 0, 0, 'Fetching customer list from segment...');
+    onProgress?.(0, officialSegmentCount || 0, 0, 'Fetching customer list from segment...');
     const customerIds = await this.getSegmentCustomerIds(segmentId);
     
     if (!customerIds.length) {
@@ -1123,10 +1156,23 @@ class ShopifyAPIService {
       };
     }
 
-    onProgress?.(0, customerIds.length, 0, `Found ${customerIds.length} customers. Starting tag removal...`);
+    // Use official count if available, otherwise use search results count
+    const totalForProgress = officialSegmentCount > 0 ? officialSegmentCount : customerIds.length;
+    
+    // Log the discrepancy if there is one
+    if (officialSegmentCount > 0 && officialSegmentCount !== customerIds.length) {
+      console.warn(`⚠️  Segment count discrepancy detected:`);
+      console.warn(`   Official segment count: ${officialSegmentCount}`);
+      console.warn(`   Search results count: ${customerIds.length}`);
+      console.warn(`   Using official count (${officialSegmentCount}) for progress tracking`);
+      
+      onProgress?.(0, totalForProgress, 0, `Found ${customerIds.length} processable customers (${officialSegmentCount} total in segment). Starting tag removal...`);
+    } else {
+      onProgress?.(0, totalForProgress, 0, `Found ${customerIds.length} customers. Starting tag removal...`);
+    }
 
     // Use batch processing for GraphQL (more reliable than bulk operations)
-    return await this.batchRemoveTags(customerIds, tagsToRemove, onProgress);
+    return await this.batchRemoveTags(customerIds, tagsToRemove, onProgress, totalForProgress);
   }
 
   /**
@@ -1338,7 +1384,7 @@ class ShopifyAPIService {
   /**
    * Batch process tag additions for GraphQL (smaller datasets)
    */
-  private async batchAddTags(customerIds: string[], tagsToAdd: string[], onProgress?: (current: number, total: number, skipped: number, message: string) => void): Promise<{
+  private async batchAddTags(customerIds: string[], tagsToAdd: string[], onProgress?: (current: number, total: number, skipped: number, message: string) => void, totalForProgress?: number): Promise<{
     success: boolean;
     processedCount: number;
     skippedCount: number;
@@ -1348,9 +1394,9 @@ class ShopifyAPIService {
     let processedCount = 0;
     let skippedCount = 0;
     const batchSize = 10; // Process in smaller batches to avoid rate limits
-    const totalCustomers = customerIds.length;
+    const totalCustomers = totalForProgress || customerIds.length;
 
-    onProgress?.(0, totalCustomers, 0, `Starting to add tags to ${totalCustomers} customers...`);
+    onProgress?.(0, totalCustomers, 0, `Starting to add tags to ${customerIds.length} customers...`);
 
     for (let i = 0; i < customerIds.length; i += batchSize) {
       const batch = customerIds.slice(i, i + batchSize);
@@ -1454,7 +1500,7 @@ class ShopifyAPIService {
   /**
    * Batch process tag removals for GraphQL (smaller datasets)
    */
-  private async batchRemoveTags(customerIds: string[], tagsToRemove: string[], onProgress?: (current: number, total: number, skipped: number, message: string) => void): Promise<{
+  private async batchRemoveTags(customerIds: string[], tagsToRemove: string[], onProgress?: (current: number, total: number, skipped: number, message: string) => void, totalForProgress?: number): Promise<{
     success: boolean;
     processedCount: number;
     skippedCount: number;
@@ -1464,9 +1510,9 @@ class ShopifyAPIService {
     let processedCount = 0;
     let skippedCount = 0;
     const batchSize = 10;
-    const totalCustomers = customerIds.length;
+    const totalCustomers = totalForProgress || customerIds.length;
 
-    onProgress?.(0, totalCustomers, 0, `Starting to remove tags from ${totalCustomers} customers...`);
+    onProgress?.(0, totalCustomers, 0, `Starting to remove tags from ${customerIds.length} customers...`);
 
     for (let i = 0; i < customerIds.length; i += batchSize) {
       const batch = customerIds.slice(i, i + batchSize);
