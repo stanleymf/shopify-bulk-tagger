@@ -49,8 +49,38 @@ export interface ShopifyAPIError {
   details?: any;
 }
 
+// GraphQL Types
+export interface GraphQLCustomerSegment {
+  id: string;
+  name: string;
+  query?: string;
+  createdAt: string;
+  updatedAt: string;
+  customerCount?: number;
+}
+
+export interface GraphQLCustomer {
+  id: string;
+  email: string;
+  firstName?: string;
+  lastName?: string;
+  tags: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GraphQLResponse<T> {
+  data?: T;
+  errors?: Array<{
+    message: string;
+    locations?: Array<{ line: number; column: number }>;
+    path?: string[];
+  }>;
+}
+
 class ShopifyAPIService {
   private baseURL: string = '';
+  private graphqlURL: string = '';
   private accessToken: string | null = null;
   private shopDomain: string | null = null;
   private isInitializedFlag: boolean = false;
@@ -77,6 +107,7 @@ class ShopifyAPIService {
     this.shopDomain = shopDomain;
     this.accessToken = accessToken;
     this.baseURL = `https://${shopDomain}/admin/api/2024-01`;
+    this.graphqlURL = `https://${shopDomain}/admin/api/2024-01/graphql.json`;
     this.isInitializedFlag = true;
   }
 
@@ -117,12 +148,146 @@ class ShopifyAPIService {
     }
   }
 
-  // Get all customer segments from Shopify
+  // GraphQL query method
+  private async graphqlQuery<T>(query: string, variables?: any): Promise<GraphQLResponse<T>> {
+    if (!this.isInitialized()) {
+      throw new Error('Shopify API service not initialized. Please connect your store first.');
+    }
+
+    try {
+      const response = await fetch(this.graphqlURL, {
+        method: 'POST',
+        headers: {
+          'X-Shopify-Access-Token': this.accessToken!,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          query,
+          variables,
+        }),
+      });
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          throw new Error('Invalid access token. Please reconnect your store.');
+        } else if (response.status === 403) {
+          throw new Error('Access denied. Please check your API permissions.');
+        } else {
+          throw new Error(`GraphQL request failed: ${response.status}`);
+        }
+      }
+
+      const data: GraphQLResponse<T> = await response.json();
+      
+      if (data.errors && data.errors.length > 0) {
+        console.warn('GraphQL errors:', data.errors);
+        throw new Error(`GraphQL errors: ${data.errors.map(e => e.message).join(', ')}`);
+      }
+
+      return data;
+    } catch (error) {
+      console.error('GraphQL query failed:', error);
+      throw error;
+    }
+  }
+
+  // Convert GraphQL customer segment to REST format
+  private convertGraphQLSegmentToREST(graphqlSegment: GraphQLCustomerSegment): ShopifyCustomerSegment {
+    return {
+      id: parseInt(graphqlSegment.id.split('/').pop() || '0'),
+      name: graphqlSegment.name,
+      query: graphqlSegment.query,
+      created_at: graphqlSegment.createdAt,
+      updated_at: graphqlSegment.updatedAt,
+      customer_count: graphqlSegment.customerCount,
+    };
+  }
+
+  // Convert GraphQL customer to REST format
+  private convertGraphQLCustomerToREST(graphqlCustomer: GraphQLCustomer): ShopifyCustomer {
+    return {
+      id: parseInt(graphqlCustomer.id.split('/').pop() || '0'),
+      email: graphqlCustomer.email,
+      first_name: graphqlCustomer.firstName,
+      last_name: graphqlCustomer.lastName,
+      tags: graphqlCustomer.tags.join(', '),
+      created_at: graphqlCustomer.createdAt,
+      updated_at: graphqlCustomer.updatedAt,
+    };
+  }
+
+  // Get all customer segments from Shopify using GraphQL first, then REST fallback
   async getCustomerSegments(): Promise<ShopifyCustomerSegment[]> {
     if (!this.isInitialized()) {
       throw new Error('Shopify API service not initialized. Please connect your store first.');
     }
 
+    // Try GraphQL first
+    try {
+      console.log('Attempting to fetch customer segments via GraphQL...');
+      const segments = await this.getCustomerSegmentsGraphQL();
+      if (segments.length > 0) {
+        console.log(`Successfully fetched ${segments.length} segments via GraphQL`);
+        return segments;
+      }
+    } catch (error) {
+      console.warn('GraphQL fetch failed, falling back to REST API:', error);
+    }
+
+    // Fallback to REST API
+    try {
+      console.log('Fetching customer segments via REST API...');
+      return await this.getCustomerSegmentsREST();
+    } catch (error) {
+      console.error('Both GraphQL and REST failed:', error);
+      throw error;
+    }
+  }
+
+  // Get customer segments using GraphQL
+  private async getCustomerSegmentsGraphQL(): Promise<ShopifyCustomerSegment[]> {
+    const query = `
+      query {
+        customerSegments(first: 250) {
+          edges {
+            node {
+              id
+              name
+              query
+              createdAt
+              updatedAt
+              customerCount
+            }
+          }
+        }
+      }
+    `;
+
+    const response = await this.graphqlQuery<{
+      customerSegments: {
+        edges: Array<{
+          node: GraphQLCustomerSegment;
+        }>;
+      };
+    }>(query);
+
+    if (!response.data?.customerSegments) {
+      return [];
+    }
+
+    const segments = response.data.customerSegments.edges.map(edge => 
+      this.convertGraphQLSegmentToREST(edge.node)
+    );
+
+    // Store segments in local storage
+    storage.saveSegments(segments);
+    storage.updateLastSync();
+    
+    return segments;
+  }
+
+  // Get customer segments using REST API (existing implementation)
+  private async getCustomerSegmentsREST(): Promise<ShopifyCustomerSegment[]> {
     try {
       const response = await fetch(`${this.baseURL}/customer_segments.json`, {
         headers: {
@@ -160,6 +325,68 @@ class ShopifyAPIService {
       throw new Error('Shopify API service not initialized. Please connect your store first.');
     }
 
+    // Try GraphQL first
+    try {
+      console.log(`Attempting to fetch customers for segment ${segmentId} via GraphQL...`);
+      const customers = await this.getSegmentCustomersGraphQL(segmentId);
+      if (customers.length > 0) {
+        console.log(`Successfully fetched ${customers.length} customers via GraphQL`);
+        return customers;
+      }
+    } catch (error) {
+      console.warn('GraphQL fetch failed, falling back to REST API:', error);
+    }
+
+    // Fallback to REST API
+    try {
+      console.log(`Fetching customers for segment ${segmentId} via REST API...`);
+      return await this.getSegmentCustomersREST(segmentId);
+    } catch (error) {
+      console.error('Both GraphQL and REST failed:', error);
+      throw error;
+    }
+  }
+
+  // Get segment customers using GraphQL
+  private async getSegmentCustomersGraphQL(segmentId: number): Promise<ShopifyCustomer[]> {
+    const query = `
+      query($segmentId: ID!) {
+        customerSegment(id: $segmentId) {
+          customers(first: 250) {
+            edges {
+              node {
+                id
+                email
+                firstName
+                lastName
+                tags
+                createdAt
+                updatedAt
+              }
+            }
+          }
+        }
+      }
+    `;
+
+    const variables = { segmentId: `gid://shopify/CustomerSegment/${segmentId}` };
+    
+    const response = await this.graphqlQuery<{
+      customerSegment: {
+        customers: {
+          edges: Array<{
+            node: GraphQLCustomer;
+          }>;
+        };
+      };
+    }>(query, variables);
+
+    const customers = response.data?.customerSegment?.customers.edges.map(edge => edge.node) || [];
+    return customers.map(customer => this.convertGraphQLCustomerToREST(customer));
+  }
+
+  // Get segment customers using REST API (existing implementation)
+  private async getSegmentCustomersREST(segmentId: number): Promise<ShopifyCustomer[]> {
     try {
       const response = await fetch(
         `${this.baseURL}/customer_segments/${segmentId}/customers.json`,
@@ -195,6 +422,79 @@ class ShopifyAPIService {
       throw new Error('Shopify API service not initialized. Please connect your store first.');
     }
 
+    // Try GraphQL first
+    try {
+      console.log(`Attempting to update tags for customer ${customerId} via GraphQL...`);
+      const customer = await this.updateCustomerTagsGraphQL(customerId, tags);
+      console.log(`Successfully updated customer ${customerId} via GraphQL`);
+      return customer;
+    } catch (error) {
+      console.warn('GraphQL update failed, falling back to REST API:', error);
+    }
+
+    // Fallback to REST API
+    try {
+      console.log(`Updating tags for customer ${customerId} via REST API...`);
+      return await this.updateCustomerTagsREST(customerId, tags);
+    } catch (error) {
+      console.error('Both GraphQL and REST failed:', error);
+      throw error;
+    }
+  }
+
+  // Update customer tags using GraphQL
+  private async updateCustomerTagsGraphQL(customerId: number, tags: string): Promise<ShopifyCustomer> {
+    const query = `
+      mutation customerUpdate($input: CustomerInput!) {
+        customerUpdate(input: $input) {
+          customer {
+            id
+            email
+            firstName
+            lastName
+            tags
+            createdAt
+            updatedAt
+          }
+          userErrors {
+            field
+            message
+          }
+        }
+      }
+    `;
+
+    const variables = {
+      input: {
+        id: `gid://shopify/Customer/${customerId}`,
+        tags: tags.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0),
+      },
+    };
+
+    const response = await this.graphqlQuery<{
+      customerUpdate: {
+        customer: GraphQLCustomer;
+        userErrors: Array<{
+          field: string;
+          message: string;
+        }>;
+      };
+    }>(query, variables);
+
+    if (response.data?.customerUpdate.userErrors && response.data.customerUpdate.userErrors.length > 0) {
+      const errors = response.data.customerUpdate.userErrors.map(error => `${error.field}: ${error.message}`).join(', ');
+      throw new Error(`GraphQL update failed: ${errors}`);
+    }
+
+    if (!response.data?.customerUpdate.customer) {
+      throw new Error('No customer data returned from GraphQL update');
+    }
+
+    return this.convertGraphQLCustomerToREST(response.data.customerUpdate.customer);
+  }
+
+  // Update customer tags using REST API (existing implementation)
+  private async updateCustomerTagsREST(customerId: number, tags: string): Promise<ShopifyCustomer> {
     try {
       const updateData: CustomerUpdateRequest = {
         customer: {
