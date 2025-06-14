@@ -13,6 +13,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Analytics dashboard for tag operations
 - Bulk rule import/export functionality
 
+## [1.2.2] - 2024-01-15
+
+### Added
+- Settings module in sidebar navigation
+- Shopify authentication configuration form
+- Connection status monitoring and testing
+- Secure credential input with show/hide toggle
+- Manual segment synchronization controls
+- Professional settings interface with validation
+
+### Features
+- Complete Shopify store configuration interface
+- Real-time connection status display
+- Test connection functionality
+- Manual sync triggers for customer segments
+- Secure credential management with password fields
+- Helpful guidance and documentation links
+
+### Technical Details
+- New Settings component with comprehensive form
+- Connection status card with live updates
+- Form validation for required fields
+- Loading states for all async operations
+- Error and success message handling
+- Responsive design for all screen sizes
+
 ## [1.2.1] - 2024-01-15
 
 ### Changed

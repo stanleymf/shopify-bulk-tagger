@@ -5,6 +5,7 @@ import { LogoutPage } from "@/components/LogoutPage";
 import { Sidebar } from "@/components/Sidebar";
 import { Dashboard } from "@/components/Dashboard";
 import { Rules } from "@/components/Rules";
+import { Settings } from "@/components/Settings";
 
 function AppContent() {
   const { isAuthenticated, isLoading, error, login, logout, clearError } = useAuth();
@@ -17,6 +18,8 @@ function AppContent() {
         return <Dashboard />;
       case 'rules':
         return <Rules />;
+      case 'settings':
+        return <Settings />;
       default:
         return <Dashboard />;
     }
