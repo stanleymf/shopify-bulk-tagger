@@ -13,6 +13,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Analytics dashboard for tag operations
 - Bulk rule import/export functionality
 
+## [1.2.5] - 2025-01-15
+
+### Added
+- **GraphQL API support** as primary method for Shopify integration
+- Dual API strategy: GraphQL (primary) + REST (fallback) for optimal performance
+- GraphQL types and interfaces for customer segments and customers
+- GraphQL queries for customer segments, segment customers, and tag updates
+- Automatic fallback logic with detailed console logging
+- Comprehensive GraphQL documentation and examples
+
+### Features
+- **Enhanced Performance**: GraphQL provides better performance for complex queries
+- **Type Safety**: Strong typing for all GraphQL operations
+- **Automatic Fallback**: Seamless switching between GraphQL and REST APIs
+- **Better Error Handling**: Detailed error messages for both API types
+- **Real-time Monitoring**: Console logging shows which API method is being used
+- **Backward Compatibility**: Existing REST API implementation remains fully functional
+
+### Technical Details
+- GraphQL Admin API integration with proper authentication
+- Automatic fallback to REST API when GraphQL fails
+- Conversion utilities between GraphQL and REST data formats
+- Enhanced error handling for both API types
+- Performance optimization with reduced network calls
+- Comprehensive documentation updates
+
+### Changed
+- Updated `getCustomerSegments()` to try GraphQL first, then REST
+- Updated `getSegmentCustomers()` with GraphQL support
+- Updated `updateCustomerTags()` with GraphQL mutations
+- Enhanced Dashboard with API method indicators
+- Updated documentation with dual API strategy
+
+### Performance Improvements
+- Reduced network overhead with GraphQL queries
+- More efficient data fetching for complex operations
+- Better caching strategies for frequently accessed data
+- Optimized batch processing capabilities
+
 ## [1.2.4] - 2024-01-15
 
 ### Fixed
