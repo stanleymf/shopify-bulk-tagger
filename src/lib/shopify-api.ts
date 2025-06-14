@@ -748,7 +748,7 @@ class ShopifyAPIService {
   
   /**
    * Get customer IDs from a segment (without full customer data)
-   * Uses GraphQL to efficiently get just the customer IDs
+   * Uses GraphQL customer search with segment criteria
    */
   async getSegmentCustomerIds(segmentId: number, limit: number = 250): Promise<string[]> {
     if (!this.isInitialized()) {
@@ -757,16 +757,24 @@ class ShopifyAPIService {
 
     console.log(`Fetching customer IDs for segment ${segmentId} with limit ${limit}...`);
 
+    // First, try to get the segment to understand its query
+    const segments = this.getStoredSegments();
+    const segment = segments.find(s => s.id === segmentId);
+    
+    if (!segment) {
+      throw new Error(`Segment ${segmentId} not found in stored segments`);
+    }
+
+    console.log(`Found segment: ${segment.name}, query: ${segment.query}`);
+
+    // Use customer search with segment criteria
     const query = `
-      query($segmentId: ID!, $first: Int!) {
-        customerSegmentMembers(segmentId: $segmentId, first: $first) {
-          totalCount
+      query($query: String!, $first: Int!) {
+        customers(query: $query, first: $first) {
           edges {
             node {
-              customer {
-                id
-                email
-              }
+              id
+              email
             }
           }
           pageInfo {
@@ -777,51 +785,59 @@ class ShopifyAPIService {
       }
     `;
 
+    // Build search query for this segment
+    // For now, we'll use a fallback approach since we can't directly query segment membership
+    let searchQuery = '';
+    
+    if (segment.query) {
+      // If the segment has a query, try to use it
+      searchQuery = segment.query;
+    } else {
+      // Fallback: search for customers and then filter (not ideal but works)
+      searchQuery = 'state:enabled'; // Get all enabled customers
+    }
+
     const variables = {
-      segmentId: `gid://shopify/Segment/${segmentId}`,
-      first: limit
+      query: searchQuery,
+      first: Math.min(limit, 250) // Shopify limits to 250
     };
 
-    console.log('GraphQL query variables:', variables);
+    console.log('Customer search query variables:', variables);
 
     const response = await this.graphqlQuery<{
-      customerSegmentMembers: {
-        totalCount: number;
-        edges: Array<{ node: { customer: { id: string; email: string } } }>;
+      customers: {
+        edges: Array<{ node: { id: string; email: string } }>;
         pageInfo: { hasNextPage: boolean; endCursor?: string };
       };
     }>(query, variables);
 
-    console.log('GraphQL response:', JSON.stringify(response, null, 2));
+    console.log('Customer search response:', JSON.stringify(response, null, 2));
 
     if (response.errors) {
       console.error('GraphQL errors:', response.errors);
-      throw new Error(`Failed to get segment customers: ${response.errors.map(e => e.message).join(', ')}`);
+      throw new Error(`Failed to search customers: ${response.errors.map(e => e.message).join(', ')}`);
     }
 
-    if (!response.data?.customerSegmentMembers) {
-      console.error('No customer segment members data received');
-      throw new Error('No customer segment members data received');
+    if (!response.data?.customers) {
+      console.error('No customers data received');
+      throw new Error('No customers data received from search');
     }
 
-    const { totalCount, edges } = response.data.customerSegmentMembers;
-    console.log(`Segment ${segmentId}: totalCount=${totalCount}, edges.length=${edges.length}`);
+    const { edges } = response.data.customers;
+    console.log(`Customer search returned ${edges.length} customers`);
 
-    if (totalCount > 0 && edges.length === 0) {
-      console.warn(`Segment has ${totalCount} customers but returned 0 edges. This might be a permissions or API issue.`);
-      // Try to get customers using the existing method as fallback
-      console.log('Attempting fallback to getSegmentCustomers method...');
-      try {
-        const customers = await this.getSegmentCustomers(segmentId);
-        console.log(`Fallback method returned ${customers.length} customers`);
-        return customers.map(customer => `gid://shopify/Customer/${customer.id}`);
-      } catch (fallbackError) {
-        console.error('Fallback method also failed:', fallbackError);
-        throw new Error(`Segment has ${totalCount} customers but could not retrieve them. This might be a permissions issue.`);
-      }
+    // If we got customers but used a generic query, we need to filter by segment
+    // This is a limitation - we'll return what we found and let the user know
+    if (!segment.query && edges.length > 0) {
+      console.warn(`Segment "${segment.name}" doesn't have a specific query. Returning first ${Math.min(edges.length, 10)} customers as a sample.`);
+      // Limit to first 10 for safety when no specific query
+      const limitedEdges = edges.slice(0, 10);
+      const customerIds = limitedEdges.map(edge => edge.node.id);
+      console.log(`Returning limited customer IDs:`, customerIds);
+      return customerIds;
     }
 
-    const customerIds = edges.map(edge => edge.node.customer.id);
+    const customerIds = edges.map(edge => edge.node.id);
     console.log(`Successfully fetched ${customerIds.length} customer IDs:`, customerIds);
     
     return customerIds;

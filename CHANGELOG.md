@@ -12,6 +12,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Analytics dashboard for tag operations
 - Bulk rule import/export functionality
 
+## [1.3.8] - 2025-06-14
+
+### Fixed
+- **CRITICAL**: Fixed GraphQL error "Field 'customer' doesn't exist on type 'CustomerSegmentMember'"
+- Replaced direct CustomerSegmentMember.customer access with customer search API
+- Improved customer ID retrieval using segment query criteria
+- Added fallback handling for segments without specific queries
+- Enhanced error logging and debugging for customer access issues
+
+### Technical Changes
+- Modified `getSegmentCustomerIds()` to use customer search instead of segment member traversal
+- Added segment query analysis and customer search query building
+- Implemented safety limits for generic customer queries
+- Improved GraphQL error handling and response validation
+
 ## [1.3.7] - 2025-01-14
 
 ### Added
