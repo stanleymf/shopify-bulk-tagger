@@ -755,13 +755,17 @@ class ShopifyAPIService {
       throw new Error('Shopify API service not initialized');
     }
 
+    console.log(`Fetching customer IDs for segment ${segmentId} with limit ${limit}...`);
+
     const query = `
       query($segmentId: ID!, $first: Int!) {
         customerSegmentMembers(segmentId: $segmentId, first: $first) {
+          totalCount
           edges {
             node {
               customer {
                 id
+                email
               }
             }
           }
@@ -778,22 +782,49 @@ class ShopifyAPIService {
       first: limit
     };
 
+    console.log('GraphQL query variables:', variables);
+
     const response = await this.graphqlQuery<{
       customerSegmentMembers: {
-        edges: Array<{ node: { customer: { id: string } } }>;
+        totalCount: number;
+        edges: Array<{ node: { customer: { id: string; email: string } } }>;
         pageInfo: { hasNextPage: boolean; endCursor?: string };
       };
     }>(query, variables);
 
+    console.log('GraphQL response:', JSON.stringify(response, null, 2));
+
     if (response.errors) {
+      console.error('GraphQL errors:', response.errors);
       throw new Error(`Failed to get segment customers: ${response.errors.map(e => e.message).join(', ')}`);
     }
 
     if (!response.data?.customerSegmentMembers) {
+      console.error('No customer segment members data received');
       throw new Error('No customer segment members data received');
     }
 
-    return response.data.customerSegmentMembers.edges.map(edge => edge.node.customer.id);
+    const { totalCount, edges } = response.data.customerSegmentMembers;
+    console.log(`Segment ${segmentId}: totalCount=${totalCount}, edges.length=${edges.length}`);
+
+    if (totalCount > 0 && edges.length === 0) {
+      console.warn(`Segment has ${totalCount} customers but returned 0 edges. This might be a permissions or API issue.`);
+      // Try to get customers using the existing method as fallback
+      console.log('Attempting fallback to getSegmentCustomers method...');
+      try {
+        const customers = await this.getSegmentCustomers(segmentId);
+        console.log(`Fallback method returned ${customers.length} customers`);
+        return customers.map(customer => `gid://shopify/Customer/${customer.id}`);
+      } catch (fallbackError) {
+        console.error('Fallback method also failed:', fallbackError);
+        throw new Error(`Segment has ${totalCount} customers but could not retrieve them. This might be a permissions issue.`);
+      }
+    }
+
+    const customerIds = edges.map(edge => edge.node.customer.id);
+    console.log(`Successfully fetched ${customerIds.length} customer IDs:`, customerIds);
+    
+    return customerIds;
   }
 
   /**

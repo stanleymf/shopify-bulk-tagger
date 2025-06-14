@@ -119,6 +119,34 @@ export function Dashboard() {
     setSuccess('Cleared all customer counts - Load Count buttons should now be visible');
   };
 
+  const handleTestCustomerAccess = async (segmentId: number) => {
+    setError(null);
+    setSuccess(null);
+    
+    try {
+      if (!shopifyAPI.isInitialized()) {
+        throw new Error('Please connect your Shopify store in Settings first');
+      }
+
+      const segment = segments.find(s => s.id === segmentId);
+      const segmentName = segment?.name || 'Unknown Segment';
+      
+      setSuccess(`Testing customer access for "${segmentName}"... Check browser console for detailed logs.`);
+      
+      // This will trigger the detailed logging we added
+      const customerIds = await shopifyAPI.getSegmentCustomerIds(segmentId, 10);
+      
+      if (customerIds.length > 0) {
+        setSuccess(`✅ Successfully accessed ${customerIds.length} customers in "${segmentName}". Bulk tagging should work.`);
+      } else {
+        setError(`❌ Could not access customers in "${segmentName}". Check console for details. This segment may not support bulk operations.`);
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to test customer access';
+      setError(`❌ Customer access test failed: ${errorMessage}`);
+    }
+  };
+
   // Bulk tagging handlers
   const handleStartBulkTagging = (segmentId: number, mode: 'add' | 'remove') => {
     setBulkTaggingSegmentId(segmentId);
@@ -176,7 +204,25 @@ export function Dashboard() {
         );
         handleCancelBulkTagging();
       } else {
-        setError(`Bulk tagging completed with errors: ${result.errors.join(', ')}`);
+        // Check if it's a customer access issue
+        const hasCustomerAccessError = result.errors.some(error => 
+          error.includes('No customers found') || 
+          error.includes('permissions') ||
+          error.includes('could not retrieve them')
+        );
+        
+        if (hasCustomerAccessError && result.processedCount === 0) {
+          setError(
+            `Unable to access customers in this segment. This might be due to: 
+            1) Segment permissions - some segments don't allow direct customer access
+            2) Dynamic segments - computed segments may not support bulk operations
+            3) API limitations - try using individual customer tagging instead
+            
+            Error details: ${result.errors.join(', ')}`
+          );
+        } else {
+          setError(`Bulk tagging completed with errors: ${result.errors.join(', ')}`);
+        }
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to process bulk tagging';
@@ -489,6 +535,16 @@ export function Dashboard() {
                             </Button>
                           </div>
                         )}
+                        
+                        {/* Debug Test Button */}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleTestCustomerAccess(segment.id)}
+                          className="w-full text-xs h-6 text-gray-500 hover:text-gray-700 hover:bg-gray-50"
+                        >
+                          🔍 Test Customer Access (Debug)
+                        </Button>
                       </div>
                     </CardContent>
                   </Card>

@@ -12,6 +12,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Analytics dashboard for tag operations
 - Bulk rule import/export functionality
 
+## [1.3.7] - 2025-01-14
+
+### Added
+- **🔍 Debug Customer Access**: Added "Test Customer Access" button to each segment card for troubleshooting
+- **📊 Enhanced Logging**: Comprehensive logging in `getSegmentCustomerIds()` to debug customer access issues
+- **🛡️ Smart Fallback**: Automatic fallback to `getSegmentCustomers()` when GraphQL returns count but no customer data
+- **💬 Better Error Messages**: More helpful error messages explaining why bulk tagging might fail
+
+### Fixed
+- **🐛 Customer Access Issue**: Addresses the issue where segments show customer count but return 0 customers for tagging
+- **📋 Detailed Diagnostics**: Added logging to identify if the issue is permissions, segment type, or API limitations
+
+### Technical Improvements
+- **Debug Tools**: Test button triggers detailed console logging for troubleshooting
+- **Error Classification**: Distinguishes between different types of customer access failures
+- **Fallback Mechanism**: When GraphQL `customerSegmentMembers` returns `totalCount > 0` but `edges.length = 0`, automatically tries the existing `getSegmentCustomers` method
+- **Console Logging**: Detailed logging of GraphQL queries, responses, and customer ID extraction
+
+### User Experience
+- **Helpful Error Messages**: Explains potential causes (permissions, dynamic segments, API limitations)
+- **Debug Workflow**: Easy-to-use test button for diagnosing segment access issues
+- **Console Guidance**: Directs users to check browser console for detailed diagnostic information
+
 ## [1.3.6] - 2025-01-14
 
 ### Fixed
