@@ -18,6 +18,9 @@ export interface AppData {
   segments: any[];
   rules: any[];
   lastSync: string | null;
+  monitoringRules?: any[];
+  segmentSnapshots?: Array<[number, any]>;
+  changeHistory?: any[];
 }
 
 class StorageManager {

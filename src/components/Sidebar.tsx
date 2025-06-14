@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Users, Settings, BarChart3, LogOut, Cog } from "lucide-react";
+import { Users, Settings, BarChart3, LogOut, Cog, Activity } from "lucide-react";
 
 interface SidebarProps {
   activeTab: string;
@@ -19,6 +19,11 @@ export function Sidebar({ activeTab, onTabChange, onLogout }: SidebarProps) {
       id: 'rules',
       label: 'Tagging Rules',
       icon: Settings
+    },
+    {
+      id: 'monitoring',
+      label: 'Real-time Monitoring',
+      icon: Activity
     },
     {
       id: 'settings',

@@ -12,6 +12,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Analytics dashboard for tag operations
 - Bulk rule import/export functionality
 
+## [1.4.0] - 2025-06-14
+
+### Added - MAJOR FEATURE: Real-time Segment Monitoring
+- **Real-time Segment Monitoring System**: Automatically monitors customer movement between segments
+- **Automated Rule Engine**: Create rules that trigger when customers enter, exit, or move between segments
+- **Segment Change Detection**: Continuous monitoring with configurable intervals (30-second default)
+- **Smart Rule Triggers**: Support for three trigger types:
+  - `segment_enter`: When customer joins a specific segment
+  - `segment_exit`: When customer leaves a specific segment  
+  - `segment_move`: When customer moves from one segment to another
+- **Automated Tag Management**: Automatically add/remove tags based on segment changes
+- **Change History Tracking**: Complete audit trail of all segment changes and rule executions
+- **Real-time Dashboard**: Live monitoring status, active rules, and recent changes
+- **Background Processing**: Non-blocking rule execution with proper rate limiting
+
+### New Components
+- `SegmentMonitoringService`: Core monitoring engine with snapshot comparison
+- `SegmentMonitoring` UI: Complete interface for managing monitoring rules
+- Enhanced storage system for monitoring data persistence
+- Real-time status indicators and execution statistics
+
+### Technical Features
+- **Snapshot-based Change Detection**: Compares segment membership over time
+- **Rate Limiting**: Respects Shopify API limits with intelligent delays
+- **Error Handling**: Comprehensive error recovery and logging
+- **Data Persistence**: Stores monitoring rules, snapshots, and change history
+- **Background Intervals**: Configurable monitoring frequency
+- **Manual Force Checks**: On-demand segment change detection
+
+### UI Enhancements
+- New "Real-time Monitoring" tab in navigation
+- Monitoring status dashboard with live indicators
+- Rule creation/editing interface with advanced trigger options
+- Recent changes timeline with detailed change information
+- Start/Stop monitoring controls with status feedback
+
+### Use Cases Enabled
+- **VIP Customer Management**: Auto-tag customers when they join VIP segments
+- **Lifecycle Automation**: Remove "New Customer" tags when customers become repeat buyers
+- **Segment-based Campaigns**: Automatically prepare customers for targeted campaigns
+- **Customer Journey Tracking**: Tag customers as they progress through different segments
+- **Retention Management**: Tag customers when they move to at-risk segments
+
 ## [1.3.9] - 2025-06-14
 
 ### Fixed
