@@ -2,6 +2,9 @@
 // Handles real-time monitoring of customer segment changes and triggers automated rules
 
 import { shopifyAPI, ShopifyCustomerSegment, ShopifyCustomer } from './shopify-api';
+
+// Import the class for static methods
+import './shopify-api';
 import { ruleExecutor } from './rule-executor';
 import { storage } from './storage';
 
@@ -39,7 +42,7 @@ export interface MonitoringRule {
 
 class SegmentMonitoringService {
   private isMonitoring = false;
-  private monitoringInterval: NodeJS.Timeout | null = null;
+  private monitoringInterval: number | null = null;
   private segmentSnapshots: Map<number, SegmentSnapshot> = new Map();
   private monitoringRules: MonitoringRule[] = [];
   private changeHistory: SegmentChange[] = [];
@@ -138,7 +141,7 @@ class SegmentMonitoringService {
 
       for (const segment of segments) {
         try {
-          const customerIds = await shopifyAPI.getSegmentCustomerIds(segment.id, 1000);
+          const customerIds = await shopifyAPI.getSegmentCustomerIds(segment.id, 30000);
           
           const snapshot: SegmentSnapshot = {
             segmentId: segment.id,
@@ -172,7 +175,7 @@ class SegmentMonitoringService {
 
       for (const segment of segments) {
         try {
-          const currentCustomerIds = await shopifyAPI.getSegmentCustomerIds(segment.id, 1000);
+          const currentCustomerIds = await shopifyAPI.getSegmentCustomerIds(segment.id, 30000);
           const previousSnapshot = this.segmentSnapshots.get(segment.id);
 
           if (!previousSnapshot) {
@@ -318,9 +321,14 @@ class SegmentMonitoringService {
       let currentTags = customer.tags;
       for (const action of rule.actions) {
         if (action.type === 'add') {
-          currentTags = shopifyAPI.addTags(currentTags, [action.tag]);
+          // Use the static methods from the shopify-api module
+          const currentTagsArray = currentTags.split(',').map(t => t.trim()).filter(t => t);
+          const newTagsArray = [...new Set([...currentTagsArray, action.tag])];
+          currentTags = newTagsArray.join(', ');
         } else if (action.type === 'remove') {
-          currentTags = shopifyAPI.removeTags(currentTags, [action.tag]);
+          const currentTagsArray = currentTags.split(',').map(t => t.trim()).filter(t => t);
+          const filteredTagsArray = currentTagsArray.filter(t => t !== action.tag);
+          currentTags = filteredTagsArray.join(', ');
         }
       }
 

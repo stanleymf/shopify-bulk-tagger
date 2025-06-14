@@ -861,7 +861,7 @@ class ShopifyAPIService {
    * Get customer IDs from a segment (without full customer data)
    * Uses GraphQL customer search with segment criteria and pagination
    */
-  async getSegmentCustomerIds(segmentId: number, limit: number = 10000): Promise<string[]> {
+  async getSegmentCustomerIds(segmentId: number, limit: number = 30000): Promise<string[]> {
     if (!this.isInitialized()) {
       throw new Error('Shopify API service not initialized');
     }
@@ -897,12 +897,13 @@ class ShopifyAPIService {
     const maxPages = Math.ceil(limit / 250); // Shopify's max per page is 250
 
     console.log(`Starting paginated fetch for segment "${segment.name}" with search query: "${searchQuery}"`);
+    console.log(`Maximum pages to fetch: ${maxPages} (for up to ${limit} customers)`);
 
     while (hasNextPage && pageCount < maxPages && allCustomerIds.length < limit) {
       pageCount++;
       const pageSize = Math.min(250, limit - allCustomerIds.length);
       
-      console.log(`Fetching page ${pageCount}, size: ${pageSize}, cursor: ${cursor || 'null'}`);
+      console.log(`Fetching page ${pageCount}/${maxPages}, size: ${pageSize}, cursor: ${cursor || 'null'}`);
 
       // Use customer search with segment criteria
       const query = `
@@ -962,23 +963,34 @@ class ShopifyAPIService {
       hasNextPage = pageInfo.hasNextPage && allCustomerIds.length < limit;
       cursor = pageInfo.endCursor || null;
 
-      console.log(`Total customers fetched so far: ${allCustomerIds.length}`);
+      console.log(`Total customers fetched so far: ${allCustomerIds.length}/${limit}`);
 
       // Add delay between pages to respect rate limits
+      // Reduce delay for large operations to improve performance
       if (hasNextPage) {
-        await new Promise(resolve => setTimeout(resolve, 500));
+        const delay = limit > 10000 ? 300 : 500; // Faster for large operations
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+
+      // Progress update every 10 pages for large operations
+      if (pageCount % 10 === 0 && limit > 5000) {
+        console.log(`🔄 Progress: ${pageCount} pages completed, ${allCustomerIds.length} customers fetched`);
       }
     }
 
     // Handle special case for segments without specific queries
     if (!segment.query && allCustomerIds.length > 0) {
-      console.warn(`Segment "${segment.name}" doesn't have a specific query. Limiting to first 50 customers for safety.`);
-      const limitedIds = allCustomerIds.slice(0, 50);
+      console.warn(`Segment "${segment.name}" doesn't have a specific query. Limiting to first 100 customers for safety.`);
+      const limitedIds = allCustomerIds.slice(0, 100);
       console.log(`Returning limited customer IDs: ${limitedIds.length} customers`);
       return limitedIds;
     }
 
-    console.log(`Successfully fetched ${allCustomerIds.length} customer IDs from ${pageCount} pages for segment "${segment.name}"`);
+    console.log(`✅ Successfully fetched ${allCustomerIds.length} customer IDs from ${pageCount} pages for segment "${segment.name}"`);
+    
+    if (allCustomerIds.length >= limit) {
+      console.log(`⚠️  Reached maximum limit of ${limit} customers. Segment may have more customers.`);
+    }
     
     return allCustomerIds;
   }

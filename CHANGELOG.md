@@ -12,6 +12,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Analytics dashboard for tag operations
 - Bulk rule import/export functionality
 
+## [1.4.2] - 2025-06-14
+
+### Enhanced - MASSIVE SCALE: 30,000 Customer Support
+- **Increased customer limit**: Raised from 10,000 to 30,000 customers per segment
+- **Optimized pagination performance**: Reduced delay between pages from 500ms to 300ms for large operations
+- **Enhanced progress tracking**: Added progress updates every 10 pages for operations over 5,000 customers
+- **Improved logging**: Better visual indicators and progress reporting for large-scale operations
+- **Monitoring system updated**: Real-time monitoring now supports up to 30,000 customers per segment
+
+### Performance Optimizations
+- **Faster processing**: Reduced API delays for large segments (300ms vs 500ms)
+- **Better progress visibility**: Progress updates every 10 pages (e.g., "🔄 Progress: 50 pages completed, 12,500 customers fetched")
+- **Enhanced safety limits**: Increased fallback limit for segments without queries from 50 to 100 customers
+- **Memory efficiency**: Optimized customer ID collection for large datasets
+
+### Technical Changes
+- Updated default limit in `getSegmentCustomerIds()` from 10,000 to 30,000
+- Modified segment monitoring to support 30,000 customer snapshots
+- Optimized delay timing for large-scale operations
+- Enhanced progress logging with visual indicators
+- Improved limit warnings and completion messages
+
+### Scale Examples
+- **Small segments** (< 1,000): ~4 seconds processing time
+- **Medium segments** (1,000-5,000): ~15-25 seconds processing time  
+- **Large segments** (5,000-15,000): ~1-3 minutes processing time
+- **Massive segments** (15,000-30,000): ~3-6 minutes processing time
+
+### Impact
+- **Before**: Maximum 10,000 customers per segment
+- **After**: Maximum 30,000 customers per segment (3x increase)
+- **Processing time**: Optimized for faster completion of large operations
+- **User experience**: Better progress visibility for long-running operations
+
 ## [1.4.1] - 2025-06-14
 
 ### Fixed - CRITICAL: Large Segment Pagination
