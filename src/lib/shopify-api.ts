@@ -1001,10 +1001,11 @@ class ShopifyAPIService {
   async bulkAddTagsToSegment(
     segmentId: number, 
     tagsToAdd: string[], 
-    onProgress?: (current: number, total: number, message: string) => void
+    onProgress?: (current: number, total: number, skipped: number, message: string) => void
   ): Promise<{
     success: boolean;
     processedCount: number;
+    skippedCount: number;
     errors: string[];
   }> {
     if (!this.isInitialized()) {
@@ -1035,10 +1036,11 @@ class ShopifyAPIService {
   async bulkRemoveTagsFromSegment(
     segmentId: number, 
     tagsToRemove: string[], 
-    onProgress?: (current: number, total: number, message: string) => void
+    onProgress?: (current: number, total: number, skipped: number, message: string) => void
   ): Promise<{
     success: boolean;
     processedCount: number;
+    skippedCount: number;
     errors: string[];
   }> {
     if (!this.isInitialized()) {
@@ -1069,25 +1071,27 @@ class ShopifyAPIService {
   private async bulkAddTagsToSegmentGraphQL(
     segmentId: number, 
     tagsToAdd: string[], 
-    onProgress?: (current: number, total: number, message: string) => void
+    onProgress?: (current: number, total: number, skipped: number, message: string) => void
   ): Promise<{
     success: boolean;
     processedCount: number;
+    skippedCount: number;
     errors: string[];
   }> {
     // Get customer IDs from the segment
-    onProgress?.(0, 0, 'Fetching customer list from segment...');
+    onProgress?.(0, 0, 0, 'Fetching customer list from segment...');
     const customerIds = await this.getSegmentCustomerIds(segmentId);
     
     if (!customerIds.length) {
       return {
         success: true,
         processedCount: 0,
+        skippedCount: 0,
         errors: ['No customers found in this segment']
       };
     }
 
-    onProgress?.(0, customerIds.length, `Found ${customerIds.length} customers. Starting tag addition...`);
+    onProgress?.(0, customerIds.length, 0, `Found ${customerIds.length} customers. Starting tag addition...`);
 
     // Use batch processing for GraphQL (more reliable than bulk operations)
     return await this.batchAddTags(customerIds, tagsToAdd, onProgress);
@@ -1099,25 +1103,27 @@ class ShopifyAPIService {
   private async bulkRemoveTagsFromSegmentGraphQL(
     segmentId: number, 
     tagsToRemove: string[], 
-    onProgress?: (current: number, total: number, message: string) => void
+    onProgress?: (current: number, total: number, skipped: number, message: string) => void
   ): Promise<{
     success: boolean;
     processedCount: number;
+    skippedCount: number;
     errors: string[];
   }> {
     // Get customer IDs from the segment
-    onProgress?.(0, 0, 'Fetching customer list from segment...');
+    onProgress?.(0, 0, 0, 'Fetching customer list from segment...');
     const customerIds = await this.getSegmentCustomerIds(segmentId);
     
     if (!customerIds.length) {
       return {
         success: true,
         processedCount: 0,
+        skippedCount: 0,
         errors: ['No customers found in this segment']
       };
     }
 
-    onProgress?.(0, customerIds.length, `Found ${customerIds.length} customers. Starting tag removal...`);
+    onProgress?.(0, customerIds.length, 0, `Found ${customerIds.length} customers. Starting tag removal...`);
 
     // Use batch processing for GraphQL (more reliable than bulk operations)
     return await this.batchRemoveTags(customerIds, tagsToRemove, onProgress);
@@ -1129,10 +1135,11 @@ class ShopifyAPIService {
   private async bulkAddTagsToSegmentREST(
     segmentId: number, 
     tagsToAdd: string[], 
-    onProgress?: (current: number, total: number, message: string) => void
+    onProgress?: (current: number, total: number, skipped: number, message: string) => void
   ): Promise<{
     success: boolean;
     processedCount: number;
+    skippedCount: number;
     errors: string[];
   }> {
     // Get customers using REST API
@@ -1142,6 +1149,7 @@ class ShopifyAPIService {
       return {
         success: true,
         processedCount: 0,
+        skippedCount: 0,
         errors: ['No customers found in this segment']
       };
     }
@@ -1155,10 +1163,11 @@ class ShopifyAPIService {
   private async bulkRemoveTagsFromSegmentREST(
     segmentId: number, 
     tagsToRemove: string[], 
-    onProgress?: (current: number, total: number, message: string) => void
+    onProgress?: (current: number, total: number, skipped: number, message: string) => void
   ): Promise<{
     success: boolean;
     processedCount: number;
+    skippedCount: number;
     errors: string[];
   }> {
     // Get customers using REST API
@@ -1168,6 +1177,7 @@ class ShopifyAPIService {
       return {
         success: true,
         processedCount: 0,
+        skippedCount: 0,
         errors: ['No customers found in this segment']
       };
     }
@@ -1188,54 +1198,69 @@ class ShopifyAPIService {
   /**
    * Batch add tags using REST API
    */
-  private async batchAddTagsREST(customers: ShopifyCustomer[], tagsToAdd: string[], onProgress?: (current: number, total: number, message: string) => void): Promise<{
+  private async batchAddTagsREST(customers: ShopifyCustomer[], tagsToAdd: string[], onProgress?: (current: number, total: number, skipped: number, message: string) => void): Promise<{
     success: boolean;
     processedCount: number;
+    skippedCount: number;
     errors: string[];
   }> {
     const errors: string[] = [];
     let processedCount = 0;
+    let skippedCount = 0;
     const batchSize = 5; // Smaller batches for REST API
     const totalCustomers = customers.length;
 
-    onProgress?.(0, totalCustomers, `Starting to add tags to ${totalCustomers} customers via REST API...`);
+    onProgress?.(0, totalCustomers, 0, `Starting to add tags to ${totalCustomers} customers via REST API...`);
 
     for (let i = 0; i < customers.length; i += batchSize) {
       const batch = customers.slice(i, i + batchSize);
       
-      const promises = batch.map(async (customer, index) => {
+      // Process each customer in the batch
+      await Promise.all(batch.map(async (customer, index) => {
         try {
+          // Check if customer already has all the tags
           const currentTags = ShopifyAPIService.parseTags(customer.tags);
-          const newTags = [...new Set([...currentTags, ...tagsToAdd])];
-          const updatedTagsString = ShopifyAPIService.formatTags(newTags);
+          const tagsToActuallyAdd = tagsToAdd.filter(tag => !currentTags.includes(tag));
+          
+          if (tagsToActuallyAdd.length === 0) {
+            // All tags already exist, skip this customer
+            skippedCount++;
+            const currentProgress = i + index + 1;
+            onProgress?.(currentProgress, totalCustomers, skippedCount, `Skipped customer ${currentProgress}/${totalCustomers} (already has tags) (REST)`);
+            return;
+          }
+
+          // Add only the tags that don't already exist
+          const allTags = [...currentTags, ...tagsToActuallyAdd];
+          const updatedTagsString = ShopifyAPIService.formatTags(allTags);
           
           await this.updateCustomerTagsREST(customer.id, updatedTagsString);
           processedCount++;
           
           // Update progress for each customer
           const currentProgress = i + index + 1;
-          onProgress?.(currentProgress, totalCustomers, `Tagged customer ${currentProgress}/${totalCustomers} (REST)`);
+          onProgress?.(currentProgress, totalCustomers, skippedCount, `Tagged customer ${currentProgress}/${totalCustomers} (REST)`);
           
         } catch (error) {
           errors.push(`Failed to update customer ${customer.id}: ${error instanceof Error ? error.message : 'Unknown error'}`);
-          onProgress?.(i + index + 1, totalCustomers, `Failed to tag customer ${i + index + 1}/${totalCustomers}`);
+          skippedCount++;
+          onProgress?.(i + index + 1, totalCustomers, skippedCount, `Failed to tag customer ${i + index + 1}/${totalCustomers}`);
         }
-      });
+      }));
 
-      await Promise.all(promises);
-      
-      // Add delay between batches
+      // Add delay between batches to respect rate limits
       if (i + batchSize < customers.length) {
         await new Promise(resolve => setTimeout(resolve, 1000));
-        onProgress?.(Math.min(i + batchSize, totalCustomers), totalCustomers, `Processed batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(totalCustomers / batchSize)} (REST)`);
+        onProgress?.(Math.min(i + batchSize, totalCustomers), totalCustomers, skippedCount, `Processed batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(totalCustomers / batchSize)} (REST)`);
       }
     }
 
-    onProgress?.(processedCount, totalCustomers, `Completed! Successfully tagged ${processedCount}/${totalCustomers} customers via REST API`);
+    onProgress?.(processedCount, totalCustomers, skippedCount, `Completed! Successfully tagged ${processedCount}/${totalCustomers} customers via REST API, skipped ${skippedCount}`);
 
     return {
       success: errors.length === 0,
       processedCount,
+      skippedCount,
       errors
     };
   }
@@ -1243,54 +1268,69 @@ class ShopifyAPIService {
   /**
    * Batch remove tags using REST API
    */
-  private async batchRemoveTagsREST(customers: ShopifyCustomer[], tagsToRemove: string[], onProgress?: (current: number, total: number, message: string) => void): Promise<{
+  private async batchRemoveTagsREST(customers: ShopifyCustomer[], tagsToRemove: string[], onProgress?: (current: number, total: number, skipped: number, message: string) => void): Promise<{
     success: boolean;
     processedCount: number;
+    skippedCount: number;
     errors: string[];
   }> {
     const errors: string[] = [];
     let processedCount = 0;
+    let skippedCount = 0;
     const batchSize = 5;
     const totalCustomers = customers.length;
 
-    onProgress?.(0, totalCustomers, `Starting to remove tags from ${totalCustomers} customers via REST API...`);
+    onProgress?.(0, totalCustomers, 0, `Starting to remove tags from ${totalCustomers} customers via REST API...`);
 
     for (let i = 0; i < customers.length; i += batchSize) {
       const batch = customers.slice(i, i + batchSize);
       
-      const promises = batch.map(async (customer, index) => {
+      // Process each customer in the batch
+      await Promise.all(batch.map(async (customer, index) => {
         try {
+          // Check if customer has any of the tags to remove
           const currentTags = ShopifyAPIService.parseTags(customer.tags);
-          const filteredTags = currentTags.filter(tag => !tagsToRemove.includes(tag));
-          const updatedTagsString = ShopifyAPIService.formatTags(filteredTags);
+          const tagsToActuallyRemove = tagsToRemove.filter(tag => currentTags.includes(tag));
+          
+          if (tagsToActuallyRemove.length === 0) {
+            // None of the tags exist, skip this customer
+            skippedCount++;
+            const currentProgress = i + index + 1;
+            onProgress?.(currentProgress, totalCustomers, skippedCount, `Skipped customer ${currentProgress}/${totalCustomers} (doesn't have tags) (REST)`);
+            return;
+          }
+
+          // Remove only the tags that actually exist
+          const remainingTags = currentTags.filter(tag => !tagsToRemove.includes(tag));
+          const updatedTagsString = ShopifyAPIService.formatTags(remainingTags);
           
           await this.updateCustomerTagsREST(customer.id, updatedTagsString);
           processedCount++;
           
           // Update progress for each customer
           const currentProgress = i + index + 1;
-          onProgress?.(currentProgress, totalCustomers, `Untagged customer ${currentProgress}/${totalCustomers} (REST)`);
+          onProgress?.(currentProgress, totalCustomers, skippedCount, `Untagged customer ${currentProgress}/${totalCustomers} (REST)`);
           
         } catch (error) {
           errors.push(`Failed to update customer ${customer.id}: ${error instanceof Error ? error.message : 'Unknown error'}`);
-          onProgress?.(i + index + 1, totalCustomers, `Failed to untag customer ${i + index + 1}/${totalCustomers}`);
+          skippedCount++;
+          onProgress?.(i + index + 1, totalCustomers, skippedCount, `Failed to untag customer ${i + index + 1}/${totalCustomers}`);
         }
-      });
+      }));
 
-      await Promise.all(promises);
-      
-      // Add delay between batches
+      // Add delay between batches to respect rate limits
       if (i + batchSize < customers.length) {
         await new Promise(resolve => setTimeout(resolve, 1000));
-        onProgress?.(Math.min(i + batchSize, totalCustomers), totalCustomers, `Processed batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(totalCustomers / batchSize)} (REST)`);
+        onProgress?.(Math.min(i + batchSize, totalCustomers), totalCustomers, skippedCount, `Processed batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(totalCustomers / batchSize)} (REST)`);
       }
     }
 
-    onProgress?.(processedCount, totalCustomers, `Completed! Successfully untagged ${processedCount}/${totalCustomers} customers via REST API`);
+    onProgress?.(processedCount, totalCustomers, skippedCount, `Completed! Successfully untagged ${processedCount}/${totalCustomers} customers via REST API, skipped ${skippedCount}`);
 
     return {
       success: errors.length === 0,
       processedCount,
+      skippedCount,
       errors
     };
   }
@@ -1298,56 +1338,115 @@ class ShopifyAPIService {
   /**
    * Batch process tag additions for GraphQL (smaller datasets)
    */
-  private async batchAddTags(customerIds: string[], tagsToAdd: string[], onProgress?: (current: number, total: number, message: string) => void): Promise<{
+  private async batchAddTags(customerIds: string[], tagsToAdd: string[], onProgress?: (current: number, total: number, skipped: number, message: string) => void): Promise<{
     success: boolean;
     processedCount: number;
+    skippedCount: number;
     errors: string[];
   }> {
     const errors: string[] = [];
     let processedCount = 0;
+    let skippedCount = 0;
     const batchSize = 10; // Process in smaller batches to avoid rate limits
     const totalCustomers = customerIds.length;
 
-    onProgress?.(0, totalCustomers, `Starting to add tags to ${totalCustomers} customers...`);
+    onProgress?.(0, totalCustomers, 0, `Starting to add tags to ${totalCustomers} customers...`);
 
     for (let i = 0; i < customerIds.length; i += batchSize) {
       const batch = customerIds.slice(i, i + batchSize);
       
-      const promises = batch.map(async (customerId, index) => {
+      // Process each customer in the batch
+      await Promise.all(batch.map(async (customerId, index) => {
         try {
-          // Get current customer tags first
-          const customer = await this.getCustomerById(customerId);
-          const currentTags = ShopifyAPIService.parseTags(customer.tags);
-          const newTags = [...new Set([...currentTags, ...tagsToAdd])]; // Remove duplicates
-          const updatedTagsString = ShopifyAPIService.formatTags(newTags);
-          
-          await this.updateCustomerTagsById(customerId, updatedTagsString);
-          processedCount++;
-          
+          // First, get the customer's current tags to check if we need to add
+          const customerQuery = `
+            query getCustomer($id: ID!) {
+              customer(id: $id) {
+                id
+                tags
+              }
+            }
+          `;
+
+          const customerResponse = await this.graphqlQuery<{
+            customer: { id: string; tags: string[] };
+          }>(customerQuery, { id: `gid://shopify/Customer/${customerId}` });
+
+          if (customerResponse.data?.customer) {
+            const currentTags = customerResponse.data.customer.tags || [];
+            const tagsToActuallyAdd = tagsToAdd.filter(tag => !currentTags.includes(tag));
+            
+            if (tagsToActuallyAdd.length === 0) {
+              // All tags already exist, skip this customer
+              skippedCount++;
+              const currentProgress = i + index + 1;
+              onProgress?.(currentProgress, totalCustomers, skippedCount, `Skipped customer ${currentProgress}/${totalCustomers} (already has tags)`);
+              return;
+            }
+
+            // Add only the tags that don't already exist
+            const allTags = [...currentTags, ...tagsToActuallyAdd];
+            
+            const mutation = `
+              mutation customerUpdate($input: CustomerInput!) {
+                customerUpdate(input: $input) {
+                  customer {
+                    id
+                    tags
+                  }
+                  userErrors {
+                    field
+                    message
+                  }
+                }
+              }
+            `;
+
+            const result = await this.graphqlQuery<{
+              customerUpdate: {
+                customer: { id: string; tags: string[] };
+                userErrors: Array<{ field: string; message: string }>;
+              };
+            }>(mutation, {
+              input: {
+                id: `gid://shopify/Customer/${customerId}`,
+                tags: allTags
+              }
+            });
+
+            if (result.data?.customerUpdate?.userErrors && result.data.customerUpdate.userErrors.length > 0) {
+              throw new Error(result.data.customerUpdate.userErrors[0].message);
+            }
+
+            processedCount++;
+          } else {
+            skippedCount++;
+          }
+
           // Update progress for each customer
           const currentProgress = i + index + 1;
-          onProgress?.(currentProgress, totalCustomers, `Tagged customer ${currentProgress}/${totalCustomers}`);
+          onProgress?.(currentProgress, totalCustomers, skippedCount, `Tagged customer ${currentProgress}/${totalCustomers}`);
           
         } catch (error) {
           errors.push(`Failed to update customer ${customerId}: ${error instanceof Error ? error.message : 'Unknown error'}`);
-          onProgress?.(i + index + 1, totalCustomers, `Failed to tag customer ${i + index + 1}/${totalCustomers}`);
+          skippedCount++;
+          onProgress?.(i + index + 1, totalCustomers, skippedCount, `Failed to tag customer ${i + index + 1}/${totalCustomers}`);
         }
-      });
+      }));
 
-      await Promise.all(promises);
-      
-      // Add small delay between batches to respect rate limits
+      // Add delay between batches to respect rate limits
       if (i + batchSize < customerIds.length) {
         await new Promise(resolve => setTimeout(resolve, 500));
-        onProgress?.(Math.min(i + batchSize, totalCustomers), totalCustomers, `Processed batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(totalCustomers / batchSize)}`);
+        onProgress?.(Math.min(i + batchSize, totalCustomers), totalCustomers, skippedCount, `Processed batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(totalCustomers / batchSize)}`);
       }
     }
 
-    onProgress?.(processedCount, totalCustomers, `Completed! Successfully tagged ${processedCount}/${totalCustomers} customers`);
+    onProgress?.(processedCount, totalCustomers, skippedCount, `Completed! Successfully tagged ${processedCount}/${totalCustomers} customers, skipped ${skippedCount}`);
 
     return {
       success: errors.length === 0,
       processedCount,
+      skippedCount,
       errors
     };
   }
@@ -1355,133 +1454,117 @@ class ShopifyAPIService {
   /**
    * Batch process tag removals for GraphQL (smaller datasets)
    */
-  private async batchRemoveTags(customerIds: string[], tagsToRemove: string[], onProgress?: (current: number, total: number, message: string) => void): Promise<{
+  private async batchRemoveTags(customerIds: string[], tagsToRemove: string[], onProgress?: (current: number, total: number, skipped: number, message: string) => void): Promise<{
     success: boolean;
     processedCount: number;
+    skippedCount: number;
     errors: string[];
   }> {
     const errors: string[] = [];
     let processedCount = 0;
+    let skippedCount = 0;
     const batchSize = 10;
     const totalCustomers = customerIds.length;
 
-    onProgress?.(0, totalCustomers, `Starting to remove tags from ${totalCustomers} customers...`);
+    onProgress?.(0, totalCustomers, 0, `Starting to remove tags from ${totalCustomers} customers...`);
 
     for (let i = 0; i < customerIds.length; i += batchSize) {
       const batch = customerIds.slice(i, i + batchSize);
       
-      const promises = batch.map(async (customerId, index) => {
+      // Process each customer in the batch
+      await Promise.all(batch.map(async (customerId, index) => {
         try {
-          // Get current customer tags first
-          const customer = await this.getCustomerById(customerId);
-          const currentTags = ShopifyAPIService.parseTags(customer.tags);
-          const filteredTags = currentTags.filter(tag => !tagsToRemove.includes(tag));
-          const updatedTagsString = ShopifyAPIService.formatTags(filteredTags);
-          
-          await this.updateCustomerTagsById(customerId, updatedTagsString);
-          processedCount++;
-          
+          // First, get the customer's current tags to check if we need to remove
+          const customerQuery = `
+            query getCustomer($id: ID!) {
+              customer(id: $id) {
+                id
+                tags
+              }
+            }
+          `;
+
+          const customerResponse = await this.graphqlQuery<{
+            customer: { id: string; tags: string[] };
+          }>(customerQuery, { id: `gid://shopify/Customer/${customerId}` });
+
+          if (customerResponse.data?.customer) {
+            const currentTags = customerResponse.data.customer.tags || [];
+            const tagsToActuallyRemove = tagsToRemove.filter(tag => currentTags.includes(tag));
+            
+            if (tagsToActuallyRemove.length === 0) {
+              // None of the tags exist, skip this customer
+              skippedCount++;
+              const currentProgress = i + index + 1;
+              onProgress?.(currentProgress, totalCustomers, skippedCount, `Skipped customer ${currentProgress}/${totalCustomers} (doesn't have tags)`);
+              return;
+            }
+
+            // Remove only the tags that actually exist
+            const remainingTags = currentTags.filter(tag => !tagsToRemove.includes(tag));
+            
+            const mutation = `
+              mutation customerUpdate($input: CustomerInput!) {
+                customerUpdate(input: $input) {
+                  customer {
+                    id
+                    tags
+                  }
+                  userErrors {
+                    field
+                    message
+                  }
+                }
+              }
+            `;
+
+            const result = await this.graphqlQuery<{
+              customerUpdate: {
+                customer: { id: string; tags: string[] };
+                userErrors: Array<{ field: string; message: string }>;
+              };
+            }>(mutation, {
+              input: {
+                id: `gid://shopify/Customer/${customerId}`,
+                tags: remainingTags
+              }
+            });
+
+            if (result.data?.customerUpdate?.userErrors && result.data.customerUpdate.userErrors.length > 0) {
+              throw new Error(result.data.customerUpdate.userErrors[0].message);
+            }
+
+            processedCount++;
+          } else {
+            skippedCount++;
+          }
+
           // Update progress for each customer
           const currentProgress = i + index + 1;
-          onProgress?.(currentProgress, totalCustomers, `Untagged customer ${currentProgress}/${totalCustomers}`);
+          onProgress?.(currentProgress, totalCustomers, skippedCount, `Untagged customer ${currentProgress}/${totalCustomers}`);
           
         } catch (error) {
           errors.push(`Failed to update customer ${customerId}: ${error instanceof Error ? error.message : 'Unknown error'}`);
-          onProgress?.(i + index + 1, totalCustomers, `Failed to untag customer ${i + index + 1}/${totalCustomers}`);
+          skippedCount++;
+          onProgress?.(i + index + 1, totalCustomers, skippedCount, `Failed to untag customer ${i + index + 1}/${totalCustomers}`);
         }
-      });
+      }));
 
-      await Promise.all(promises);
-      
-      // Add small delay between batches
+      // Add delay between batches to respect rate limits
       if (i + batchSize < customerIds.length) {
         await new Promise(resolve => setTimeout(resolve, 500));
-        onProgress?.(Math.min(i + batchSize, totalCustomers), totalCustomers, `Processed batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(totalCustomers / batchSize)}`);
+        onProgress?.(Math.min(i + batchSize, totalCustomers), totalCustomers, skippedCount, `Processed batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(totalCustomers / batchSize)}`);
       }
     }
 
-    onProgress?.(processedCount, totalCustomers, `Completed! Successfully untagged ${processedCount}/${totalCustomers} customers`);
+    onProgress?.(processedCount, totalCustomers, skippedCount, `Completed! Successfully untagged ${processedCount}/${totalCustomers} customers, skipped ${skippedCount}`);
 
     return {
       success: errors.length === 0,
       processedCount,
+      skippedCount,
       errors
     };
-  }
-
-  /**
-   * Get customer by ID (GraphQL ID format)
-   */
-  private async getCustomerById(customerId: string): Promise<ShopifyCustomer> {
-    const query = `
-      query($id: ID!) {
-        customer(id: $id) {
-          id
-          email
-          firstName
-          lastName
-          tags
-          createdAt
-          updatedAt
-        }
-      }
-    `;
-
-    const response = await this.graphqlQuery<{
-      customer: GraphQLCustomer;
-    }>(query, { id: customerId });
-
-    if (response.errors) {
-      throw new Error(`Failed to get customer: ${response.errors.map(e => e.message).join(', ')}`);
-    }
-
-    if (!response.data?.customer) {
-      throw new Error('Customer not found');
-    }
-
-    return this.convertGraphQLCustomerToREST(response.data.customer);
-  }
-
-  /**
-   * Update customer tags by ID (GraphQL ID format)
-   */
-  private async updateCustomerTagsById(customerId: string, tags: string): Promise<void> {
-    const mutation = `
-      mutation customerUpdate($input: CustomerInput!) {
-        customerUpdate(input: $input) {
-          customer {
-            id
-            tags
-          }
-          userErrors {
-            field
-            message
-          }
-        }
-      }
-    `;
-
-    const variables = {
-      input: {
-        id: customerId,
-        tags: ShopifyAPIService.parseTags(tags)
-      }
-    };
-
-    const response = await this.graphqlQuery<{
-      customerUpdate: {
-        customer: { id: string; tags: string[] };
-        userErrors: Array<{ field: string; message: string }>;
-      };
-    }>(mutation, variables);
-
-    if (response.errors || response.data?.customerUpdate.userErrors?.length) {
-      const errors = [
-        ...(response.errors?.map(e => e.message) || []),
-        ...(response.data?.customerUpdate.userErrors?.map(e => e.message) || [])
-      ];
-      throw new Error(`Failed to update customer tags: ${errors.join(', ')}`);
-    }
   }
 }
 

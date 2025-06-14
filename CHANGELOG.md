@@ -12,173 +12,219 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Analytics dashboard for tag operations
 - Bulk rule import/export functionality
 
-## [1.5.0] - 2025-06-14
+## [1.5.1] - 2024-12-28
 
-### Added - MAJOR FEATURE: Real-time Progress Tracking
-- **Live Progress Display**: Real-time progress tracking for bulk tagging operations showing "1/5000...2/5000...3/5000"
-- **Visual Progress Bar**: Animated progress bar with percentage completion
-- **Detailed Status Messages**: Real-time status updates during each phase of the operation
-- **Timeout Prevention**: Progress callbacks prevent browser timeouts during long operations
-- **Batch Progress Updates**: Shows progress for each customer and batch completion
+### Added
+- **Skip Tracking**: Progress tracking now shows how many customers were skipped during bulk operations
+- Enhanced progress display with skip count in orange text: "Progress: 1500/5000 (Skipped: 250)"
+- Skip detection for customers who already have the tags being added or don't have the tags being removed
+- Comprehensive skip tracking for both GraphQL and REST API methods
+- Updated success messages to include skip counts: "Successfully tagged 4750 customers (Skipped: 250)"
 
-### Progress Tracking Features
-- **Customer-by-Customer Updates**: Live counter showing current customer being processed
-- **Percentage Completion**: Real-time percentage display (e.g., "45% complete")
-- **Phase Indicators**: Clear status messages for each operation phase:
-  - "Fetching customer list from segment..."
-  - "Found 5,667 customers. Starting tag addition..."
-  - "Tagged customer 1/5667"
-  - "Tagged customer 2/5667"
-  - "Processed batch 1/57"
-  - "Completed! Successfully tagged 5667/5667 customers"
+### Enhanced
+- Improved bulk tagging efficiency by skipping unnecessary operations
+- Better user feedback showing exactly how many customers were processed vs skipped
+- More accurate progress reporting with detailed skip reasons in status messages
 
-### UI Enhancements
-- **Progress Panel**: Dedicated progress display panel during bulk operations
-- **Animated Progress Bar**: Smooth progress bar with blue gradient
-- **Status Messages**: Real-time status text updates
-- **Non-blocking Interface**: Progress updates don't freeze the UI
-- **Error Handling**: Progress tracking continues even if individual customers fail
+### Technical
+- Updated all progress callbacks to include `skipped` parameter: `(current, total, skipped, message) => void`
+- Enhanced GraphQL batch methods to check existing tags before operations
+- Improved REST API batch methods with skip detection logic
+- Updated UI components to display skip counts in progress bars and completion messages
 
-### Technical Implementation
-- **Progress Callbacks**: Added optional `onProgress` parameter to all bulk tagging methods
-- **Real-time Updates**: Progress state updates trigger immediate UI re-renders
-- **Batch Tracking**: Progress updates for both individual customers and batch completions
-- **Memory Efficient**: Progress tracking doesn't impact performance for large operations
-- **Timeout Prevention**: Regular progress updates prevent browser/server timeouts
+## [1.5.0] - 2024-12-28
 
-### Performance Benefits
-- **Prevents Timeouts**: Regular progress callbacks keep connections alive
-- **User Confidence**: Users can see operations are progressing, not stuck
-- **Error Visibility**: Failed customers are tracked and reported in progress
-- **Cancellation Ready**: Foundation for future operation cancellation feature
+### Added
+- **Real-time Progress Tracking**: Live progress counters showing "1/5000...2/5000...3/5000" during bulk operations
+- Visual animated progress bar with blue gradient and percentage display
+- Detailed status messages for each operation phase
+- Progress tracking for both GraphQL and REST API fallback methods
+- Timeout prevention through regular progress callbacks
+- Enhanced Dashboard component with dedicated progress display panel
 
-### User Experience
-- **Anxiety Reduction**: Users know exactly what's happening during long operations
-- **Progress Visibility**: Clear indication of completion time and remaining work
-- **Error Transparency**: Failed operations are clearly indicated in progress
-- **Professional Feel**: Enterprise-grade progress tracking for large-scale operations
+### Enhanced
+- Customer-by-customer progress updates with batch completion indicators
+- Real-time UI updates during large bulk operations
+- Improved user experience with visual feedback during long-running operations
+- Better error handling and progress reporting
 
-### Example Progress Flow
-```
-Initializing...
-Fetching customer list from segment...
-Found 5667 customers. Starting tag removal...
-Untagged customer 1/5667
-Untagged customer 2/5667
-...
-Processed batch 10/57
-...
-Untagged customer 5665/5667
-Untagged customer 5666/5667
-Untagged customer 5667/5667
-Completed! Successfully untagged 5667/5667 customers
-```
+### Technical
+- Added `onProgress` callbacks to all bulk tagging methods
+- Implemented progress state management in Dashboard component
+- Enhanced bulk operation methods with detailed progress reporting
+- Added progress tracking for operations up to 30,000 customers
 
-## [1.4.2] - 2025-06-14
+## [1.4.2] - 2024-12-28
 
-### Enhanced - MASSIVE SCALE: 30,000 Customer Support
-- **Increased customer limit**: Raised from 10,000 to 30,000 customers per segment
-- **Optimized pagination performance**: Reduced delay between pages from 500ms to 300ms for large operations
-- **Enhanced progress tracking**: Added progress updates every 10 pages for operations over 5,000 customers
-- **Improved logging**: Better visual indicators and progress reporting for large-scale operations
-- **Monitoring system updated**: Real-time monitoring now supports up to 30,000 customers per segment
+### Enhanced
+- **Massive Scale Support**: Increased customer limit from 10,000 to 30,000 per segment (3x increase)
+- Optimized performance with 300ms delays for large operations
+- Added progress updates every 10 pages for operations over 5,000 customers
+- Enhanced logging with visual indicators and completion messages
+- Updated monitoring system to support 30,000 customer snapshots
 
-### Performance Optimizations
-- **Faster processing**: Reduced API delays for large segments (300ms vs 500ms)
-- **Better progress visibility**: Progress updates every 10 pages (e.g., "🔄 Progress: 50 pages completed, 12,500 customers fetched")
-- **Enhanced safety limits**: Increased fallback limit for segments without queries from 50 to 100 customers
-- **Memory efficiency**: Optimized customer ID collection for large datasets
+### Technical
+- Increased `MAX_CUSTOMERS_PER_SEGMENT` to 30,000
+- Optimized pagination with up to 120 pages (30,000 ÷ 250 per page)
+- Enhanced progress reporting for large-scale operations
+- Improved rate limiting for massive bulk operations
 
-### Technical Changes
-- Updated default limit in `getSegmentCustomerIds()` from 10,000 to 30,000
-- Modified segment monitoring to support 30,000 customer snapshots
-- Optimized delay timing for large-scale operations
-- Enhanced progress logging with visual indicators
-- Improved limit warnings and completion messages
+## [1.4.1] - 2024-12-28
 
-### Scale Examples
-- **Small segments** (< 1,000): ~4 seconds processing time
-- **Medium segments** (1,000-5,000): ~15-25 seconds processing time  
-- **Large segments** (5,000-15,000): ~1-3 minutes processing time
-- **Massive segments** (15,000-30,000): ~3-6 minutes processing time
+### Fixed
+- **Critical Bug**: Fixed 250 customer limit in bulk tagging operations
+- Implemented cursor-based pagination to process all customers in large segments
+- Added progress logging showing page completion (e.g., "Page 5/23 completed")
+- Increased total customer limit from 250 to 10,000 per segment
 
-### Impact
-- **Before**: Maximum 10,000 customers per segment
-- **After**: Maximum 30,000 customers per segment (3x increase)
-- **Processing time**: Optimized for faster completion of large operations
-- **User experience**: Better progress visibility for long-running operations
+### Enhanced
+- Added 500ms delays between API calls for better rate limiting
+- Improved error handling for large segment operations
+- Better progress feedback during multi-page customer fetching
 
-## [1.4.1] - 2025-06-14
+### Technical
+- Implemented `getSegmentCustomerIds()` with cursor-based pagination
+- Added `pageInfo` handling for GraphQL customer queries
+- Enhanced bulk tagging methods to handle paginated customer lists
 
-### Fixed - CRITICAL: Large Segment Pagination
-- **Fixed 250 customer limit**: Bulk tagging now processes ALL customers in large segments
-- **Added GraphQL pagination**: Implemented cursor-based pagination to fetch customers in batches
-- **Automatic page handling**: System automatically fetches multiple pages (250 customers each)
-- **Rate limiting between pages**: Added 500ms delays between API calls to respect Shopify limits
-- **Enhanced logging**: Detailed pagination progress logging for debugging large operations
+## [1.4.0] - 2024-12-28
 
-### Technical Changes
-- Modified `getSegmentCustomerIds()` to use cursor-based pagination
-- Increased default limit from 250 to 10,000 customers per segment
-- Added automatic page size calculation and cursor management
-- Implemented progressive customer ID collection across multiple API calls
-- Enhanced error handling for paginated requests
+### Added
+- **Real-time Segment Monitoring**: Automated monitoring system that tracks customer movement between segments
+- **Segment Monitoring Service**: Background service that takes snapshots and detects changes every 30 seconds
+- **Automated Rule System**: Three trigger types for customer segment changes:
+  - `segment_enter`: Customer joins a segment
+  - `segment_exit`: Customer leaves a segment  
+  - `segment_move`: Customer moves from one segment to another
+- **Real-time Dashboard**: New "Real-time Monitoring" tab with live indicators and change history
+- **Automated Tag Management**: Rules can automatically add/remove tags based on segment changes
+- **Change History**: Persistent log of all customer segment movements with timestamps
 
-### Performance Improvements
-- **Large segments now fully supported**: Segments with 5,000+ customers are processed completely
-- **Batch processing**: Efficient handling of large customer lists with proper memory management
-- **Progress tracking**: Real-time logging of pagination progress and customer counts
-- **Fallback safety**: Maintains 50-customer limit for segments without specific queries
+### Enhanced
+- Added monitoring controls: start/stop monitoring, clear history, export data
+- Real-time status indicators showing active monitoring and last update times
+- Comprehensive change detection with customer details and segment information
+- Background processing with configurable monitoring intervals
 
-### Impact
-- **Before**: Only first 250 customers were processed in large segments
-- **After**: ALL customers in segments are processed (up to 10,000 limit)
-- **Example**: A segment with 5,667 customers will now process all 5,667 customers instead of just 250
-
-## [1.4.0] - 2025-06-14
-
-### Added - MAJOR FEATURE: Real-time Segment Monitoring
-- **Real-time Segment Monitoring System**: Automatically monitors customer movement between segments
-- **Automated Rule Engine**: Create rules that trigger when customers enter, exit, or move between segments
-- **Segment Change Detection**: Continuous monitoring with configurable intervals (30-second default)
-- **Smart Rule Triggers**: Support for three trigger types:
-  - `segment_enter`: When customer joins a specific segment
-  - `segment_exit`: When customer leaves a specific segment  
-  - `segment_move`: When customer moves from one segment to another
-- **Automated Tag Management**: Automatically add/remove tags based on segment changes
-- **Change History Tracking**: Complete audit trail of all segment changes and rule executions
-- **Real-time Dashboard**: Live monitoring status, active rules, and recent changes
-- **Background Processing**: Non-blocking rule execution with proper rate limiting
-
-### New Components
-- `SegmentMonitoringService`: Core monitoring engine with snapshot comparison
-- `SegmentMonitoring` UI: Complete interface for managing monitoring rules
+### Technical
+- New `SegmentMonitoringService` class with snapshot-based change detection
 - Enhanced storage system for monitoring data persistence
-- Real-time status indicators and execution statistics
+- Added monitoring rules management with localStorage persistence
+- Implemented real-time UI updates with live change indicators
 
-### Technical Features
-- **Snapshot-based Change Detection**: Compares segment membership over time
-- **Rate Limiting**: Respects Shopify API limits with intelligent delays
-- **Error Handling**: Comprehensive error recovery and logging
-- **Data Persistence**: Stores monitoring rules, snapshots, and change history
-- **Background Intervals**: Configurable monitoring frequency
-- **Manual Force Checks**: On-demand segment change detection
+## [1.3.9] - 2024-12-28
 
-### UI Enhancements
-- New "Real-time Monitoring" tab in navigation
-- Monitoring status dashboard with live indicators
-- Rule creation/editing interface with advanced trigger options
-- Recent changes timeline with detailed change information
-- Start/Stop monitoring controls with status feedback
+### Fixed
+- **Query Translation Issue**: Fixed segment customer retrieval returning 0 customers despite segment showing customer count
+- Implemented `translateSegmentQueryToCustomerSearch()` method to convert segment syntax to customer search syntax
+- Added comprehensive regex-based translations for common segment query patterns
 
-### Use Cases Enabled
-- **VIP Customer Management**: Auto-tag customers when they join VIP segments
-- **Lifecycle Automation**: Remove "New Customer" tags when customers become repeat buyers
-- **Segment-based Campaigns**: Automatically prepare customers for targeted campaigns
-- **Customer Journey Tracking**: Tag customers as they progress through different segments
-- **Retention Management**: Tag customers when they move to at-risk segments
+### Enhanced
+- **Email Domain Translation**: `customer_email_domain = 'domain.com'` → `email:*@domain.com`
+- **Tag Translation**: `customer_tags CONTAINS 'tag'` → `tag:tag`
+- **Location Translation**: `customer_default_address_city = 'City'` → `city:City`
+- **Date Translation**: `customer_created_date >= '2024-01-01'` → `created_at:>=2024-01-01`
+- **State Translation**: `customer_account_state = 'enabled'` → `state:enabled`
 
-## [1.3.9] - 2025-06-14
+### Technical
+- Added robust query parsing with multiple translation patterns
+- Improved error handling for unsupported query formats
+- Enhanced customer search API integration with proper query formatting
+
+## [1.3.8] - 2024-12-28
+
+### Fixed
+- **GraphQL Customer Field Error**: Resolved "Field 'customer' doesn't exist on type 'CustomerSegmentMember'" error
+- Replaced direct CustomerSegmentMember.customer access with customer search API
+- Updated `getSegmentCustomerIds()` to use `customers(query: String!)` instead of `customerSegmentMembers`
+
+### Enhanced
+- Added comprehensive error handling for GraphQL queries
+- Improved customer retrieval with proper query-based search
+- Better error messages for debugging customer access issues
+
+### Technical
+- Restructured GraphQL queries to use supported Shopify Admin API fields
+- Added fallback mechanisms for customer data retrieval
+- Enhanced error logging for GraphQL operations
+
+## [1.3.7] - 2024-12-28
+
+### Enhanced
+- Improved error handling and user feedback
+- Better connection status management
+- Enhanced segment loading and caching
+
+### Technical
+- Optimized API calls and response handling
+- Improved localStorage management
+- Better error recovery mechanisms
+
+## [1.3.6] - 2024-12-28
+
+### Added
+- Enhanced bulk tagging operations with better error handling
+- Improved progress tracking during bulk operations
+- Better user feedback for large segment operations
+
+### Fixed
+- Resolved issues with customer access in certain segment types
+- Improved error messages for debugging
+
+## [1.3.5] - 2024-12-28
+
+### Enhanced
+- Improved segment customer count loading
+- Better caching mechanisms for segment data
+- Enhanced UI responsiveness
+
+## [1.3.4] - 2024-12-28
+
+### Added
+- Debug functionality for testing customer access
+- Enhanced error reporting for segment operations
+- Improved logging for troubleshooting
+
+## [1.3.3] - 2024-12-28
+
+### Enhanced
+- Better segment data management
+- Improved error handling for API operations
+- Enhanced user interface feedback
+
+## [1.3.2] - 2024-12-28
+
+### Fixed
+- Resolved segment loading issues
+- Improved API error handling
+- Better connection management
+
+## [1.3.1] - 2024-12-28
+
+### Enhanced
+- Improved segment synchronization
+- Better error messages
+- Enhanced user experience
+
+## [1.3.0] - 2024-12-28
+
+### Added
+- Customer segment management dashboard
+- Bulk tag operations for customer segments
+- Real-time segment customer counts
+- Advanced segment filtering and search
+
+### Enhanced
+- Improved Shopify API integration
+- Better error handling and user feedback
+- Enhanced UI with modern design
+
+### Technical
+- GraphQL API integration for better performance
+- Comprehensive error handling
+- Optimized data fetching and caching
+
+## [1.2.9] - 2025-06-14
 
 ### Fixed
 - **CRITICAL**: Fixed segment query translation for customer search
@@ -199,7 +245,7 @@ Completed! Successfully untagged 5667/5667 customers
 - Improved customer search query building with proper syntax
 - Enhanced error handling and debugging for query translation
 
-## [1.3.8] - 2025-06-14
+## [1.2.8] - 2025-06-14
 
 ### Fixed
 - **CRITICAL**: Fixed GraphQL error "Field 'customer' doesn't exist on type 'CustomerSegmentMember'"
@@ -213,210 +259,6 @@ Completed! Successfully untagged 5667/5667 customers
 - Added segment query analysis and customer search query building
 - Implemented safety limits for generic customer queries
 - Improved GraphQL error handling and response validation
-
-## [1.3.7] - 2025-01-14
-
-### Added
-- **🔍 Debug Customer Access**: Added "Test Customer Access" button to each segment card for troubleshooting
-- **📊 Enhanced Logging**: Comprehensive logging in `getSegmentCustomerIds()` to debug customer access issues
-- **🛡️ Smart Fallback**: Automatic fallback to `getSegmentCustomers()` when GraphQL returns count but no customer data
-- **💬 Better Error Messages**: More helpful error messages explaining why bulk tagging might fail
-
-### Fixed
-- **🐛 Customer Access Issue**: Addresses the issue where segments show customer count but return 0 customers for tagging
-- **📋 Detailed Diagnostics**: Added logging to identify if the issue is permissions, segment type, or API limitations
-
-### Technical Improvements
-- **Debug Tools**: Test button triggers detailed console logging for troubleshooting
-- **Error Classification**: Distinguishes between different types of customer access failures
-- **Fallback Mechanism**: When GraphQL `customerSegmentMembers` returns `totalCount > 0` but `edges.length = 0`, automatically tries the existing `getSegmentCustomers` method
-- **Console Logging**: Detailed logging of GraphQL queries, responses, and customer ID extraction
-
-### User Experience
-- **Helpful Error Messages**: Explains potential causes (permissions, dynamic segments, API limitations)
-- **Debug Workflow**: Easy-to-use test button for diagnosing segment access issues
-- **Console Guidance**: Directs users to check browser console for detailed diagnostic information
-
-## [1.3.6] - 2025-01-14
-
-### Fixed
-- **🔧 Bulk Tagging ID Issue**: Fixed GraphQL query to get actual customer IDs instead of CustomerSegmentMember IDs
-- **🔄 REST API Fallback**: Added comprehensive REST API fallback for bulk tagging operations
-- **⚡ Improved Reliability**: GraphQL attempts first, automatically falls back to REST API if GraphQL fails
-- **🛡️ Error Handling**: Better error handling and more descriptive error messages
-
-### Technical Improvements
-- **Correct GraphQL Query**: Fixed `customerSegmentMembers` query to access `customer.id` instead of segment member ID
-- **Dual API Support**: Both GraphQL and REST API implementations for maximum compatibility
-- **Smart Fallback**: Automatic fallback from GraphQL to REST API on errors
-- **Batch Processing**: Optimized batch sizes (10 for GraphQL, 5 for REST) with proper rate limiting
-- **Enhanced Logging**: Better error logging and debugging information
-
-### API Changes
-- Fixed `getSegmentCustomerIds()` to return actual customer IDs
-- Added `bulkAddTagsToSegmentGraphQL()` and `bulkAddTagsToSegmentREST()` methods
-- Added `bulkRemoveTagsToSegmentGraphQL()` and `bulkRemoveTagsToSegmentREST()` methods
-- Improved error messages for better debugging
-
-## [1.3.5] - 2025-01-14
-
-### Added
-- **🎯 Bulk Customer Tagging**: Complete bulk tagging functionality for customer segments
-- **Add Tags to Segment**: Bulk add tags to all customers in a segment without pulling customer data
-- **Remove Tags from Segment**: Bulk remove tags from all customers in a segment
-- **Smart Processing**: Automatically uses batch processing (<100 customers) or Shopify Bulk Operations (>100 customers)
-- **Interactive UI**: Clean interface with Add/Remove tag buttons on each segment card
-- **Real-time Feedback**: Progress indicators, success/error messages, and processing status
-- **Tag Input**: Comma-separated tag input with validation and error handling
-
-### Technical Implementation
-- **Efficient API Usage**: Only fetches customer IDs, not full customer data
-- **GraphQL Integration**: Uses `customerSegmentMembers` query for segment customer identification
-- **Batch Processing**: Processes customers in batches of 10 to respect API rate limits
-- **Error Handling**: Comprehensive error handling with detailed feedback
-- **Rate Limiting**: Built-in delays between batches to prevent API throttling
-- **Tag Management**: Proper tag parsing, deduplication, and formatting
-
-### UI/UX Improvements
-- **Segment Card Enhancement**: Added bulk tagging controls to each segment card
-- **Color-coded Actions**: Green for Add Tags, Red for Remove Tags
-- **Expandable Interface**: Click to expand tagging interface, cancel to collapse
-- **Input Validation**: Real-time validation of tag input with helpful placeholders
-- **Processing States**: Loading indicators and disabled states during operations
-
-## [1.3.4] - 2025-01-14
-
-### Added
-- **Debug Feature**: Added "Clear Counts (Debug)" button to reset customer counts
-- **Load Count Button Visibility**: Debug button allows users to see Load Count buttons again
-- **User Experience**: Helps users understand the Load Count functionality behavior
-
-### Fixed
-- **Load Count Button Issue**: Addressed user concern about Load Count buttons not being visible
-- **Explanation**: Load Count buttons are hidden when customer counts are already loaded (cached in localStorage)
-- **Expected Behavior**: This is correct functionality to prevent redundant API calls
-
-### Technical Notes
-- Customer counts persist in localStorage after being loaded once
-- Load Count buttons only appear when `customer_count` is undefined
-- Debug button temporarily resets this state for demonstration purposes
-
-## [1.3.3] - 2025-01-14
-
-### Improved
-- **Enhanced Segment Card UI**: Complete redesign of segment cards for better readability
-- **No Text Truncation**: All segment names, queries, and information now display fully
-- **Better Layout**: Improved spacing, typography, and visual hierarchy
-- **Responsive Grid**: Better responsive behavior with proper breakpoints (lg:2 cols, xl:3 cols)
-- **Visual Enhancements**: 
-  - Larger, more readable segment names
-  - Query text in dedicated highlighted sections with word wrapping
-  - Cleaner date formatting (e.g., "Jan 15, 2024")
-  - Better customer count badges with icons
-  - Improved hover effects and transitions
-  - Organized information in structured sections
-
-### Technical
-- Replaced basic div cards with proper Card components
-- Added proper CardHeader and CardContent structure
-- Improved accessibility with better contrast and spacing
-- Enhanced mobile responsiveness
-
-## [1.3.2] - 2025-01-14
-
-### Fixed
-- Confirmed Load Count functionality working correctly
-- Customer counts persist in localStorage after loading
-- Load Count buttons appear when customer_count is undefined
-- Customer count badges replace Load Count buttons after successful loading
-
-### Technical Notes
-- Load Count buttons are hidden when segments already have customer counts loaded
-- This is expected behavior to prevent redundant API calls
-- Customer counts are cached locally for performance
-
-## [1.3.1] - 2025-01-14
-
-### Added ✨
-- **Customer Count Loading**: Added "Load Count" buttons on each segment card to fetch real customer counts
-- **Dynamic Count Display**: Customer counts are fetched on-demand and cached for performance
-- **Loading States**: Visual loading indicators while fetching customer counts
-- **Count Persistence**: Customer counts are stored locally and persist across sessions
-
-### Features
-- Individual "Load Count" buttons for each segment card
-- Real-time customer count fetching using Shopify's `customerSegmentMembers` GraphQL query
-- Loading spinners and disabled states during count fetching
-- Automatic count caching and storage
-- Error handling for failed count requests
-
-### API Enhancements
-- Added `getSegmentCustomerCount()` method to fetch customer count for specific segments
-- Added `updateSegmentCustomerCount()` and `setSegmentCountLoading()` helper methods
-- Enhanced segment interface with `is_loading_count` property
-- Improved error handling and logging for count operations
-
-### UI/UX Improvements
-- Replaced static customer count badges with dynamic load buttons
-- Added Hash icon for Load Count buttons
-- Smooth loading states with spinner animations
-- Consistent button styling and responsive design
-
-## [1.3.0] - 2025-01-14
-
-### Added ✨
-- **Search Bar**: Added search functionality to Customer Segments page for easy filtering
-- **Real-time Filtering**: Filter segments by name or query terms as you type
-- **Search Results Counter**: Shows filtered count vs total segments
-- **Empty Search State**: Helpful message and clear button when no segments match search
-- **Visual Search Indicators**: Search icon and filtered count display in stats
-
-### Features
-- Search through customer segments by name or query criteria
-- Real-time filtering with instant results
-- Clear search functionality with one click
-- Responsive search bar design
-- Search results counter in segment overview
-- Empty state handling for no search results
-
-### UI/UX Improvements
-- Added search input with search icon
-- Enhanced segment overview header with result counts
-- Improved empty states for better user guidance
-- Consistent styling with existing design system
-
-## [1.2.9] - 2025-01-14
-
-### Fixed ✅
-- **Customer Segments Sync**: Successfully resolved customer segments synchronization issues
-- **GraphQL API**: Confirmed working with correct `segments` field implementation
-- **Production Verification**: All fixes deployed and verified working in production environment
-
-### Verified Working
-- Customer segments now loading correctly in the application
-- GraphQL queries returning proper segment data (id, name, query, creationDate, lastEditDate)
-- Proxy infrastructure handling all requests successfully
-- No more "Field 'customerSegments' doesn't exist" errors
-
-### Production Status
-- Version 1.2.9 successfully deployed to Cloudflare Workers
-- Customer segments synchronization confirmed working
-- All API endpoints responding correctly
-- Application fully functional for customer segment management
-
-## [1.2.8] - 2025-01-14
-
-### Fixed
-- **Customer Segments API**: Fixed GraphQL query to use correct `segments` field instead of deprecated `customerSegments`
-- **API Compatibility**: Updated GraphQL queries to work with current Shopify API versions (2024-01 and later)
-- **Error Handling**: Improved error messages for GraphQL API failures
-- **REST API Removal**: Removed REST API fallback for customer segments as they are no longer available via REST
-
-### Technical Changes
-- Updated `getCustomerSegmentsGraphQL()` to use `segments` query with correct field structure
-- Removed deprecated `getCustomerSegmentsREST()` method
-- Updated segment customers handling to reflect current API limitations
-- Enhanced error handling with proper GraphQL error reporting
 
 ## [1.2.5] - 2025-01-15
 

@@ -32,14 +32,16 @@ export function Dashboard() {
     isActive: boolean;
     segmentId: number | null;
     operation: 'add' | 'remove' | null;
-    progress: { current: number; total: number; message: string };
+    progress: { current: number; total: number; skipped: number; message: string };
   }>({
     isActive: false,
     segmentId: null,
     operation: null,
-    progress: { current: 0, total: 0, message: '' }
+    progress: { current: 0, total: 0, skipped: 0, message: '' }
   });
   const [bulkTagsInput, setBulkTagsInput] = useState("");
+
+
 
   // Load segments on component mount
   useEffect(() => {
@@ -161,7 +163,7 @@ export function Dashboard() {
       isActive: false,
       segmentId,
       operation: mode,
-      progress: { current: 0, total: 0, message: '' }
+      progress: { current: 0, total: 0, skipped: 0, message: '' }
     });
     setBulkTagsInput("");
     setError(null);
@@ -173,7 +175,7 @@ export function Dashboard() {
       isActive: false,
       segmentId: null,
       operation: null,
-      progress: { current: 0, total: 0, message: '' }
+      progress: { current: 0, total: 0, skipped: 0, message: '' }
     });
     setBulkTagsInput("");
   };
@@ -203,7 +205,7 @@ export function Dashboard() {
     setBulkTaggingState(prev => ({
       ...prev,
       isActive: true,
-      progress: { current: 0, total: 0, message: 'Initializing...' }
+      progress: { current: 0, total: 0, skipped: 0, message: 'Initializing...' }
     }));
 
     setError(null);
@@ -215,10 +217,10 @@ export function Dashboard() {
         result = await shopifyAPI.bulkAddTagsToSegment(
           bulkTaggingState.segmentId, 
           tags,
-          (current, total, message) => {
+          (current: number, total: number, skipped: number, message: string) => {
             setBulkTaggingState(prev => ({
               ...prev,
-              progress: { current, total, message }
+              progress: { current, total, skipped, message }
             }));
           }
         );
@@ -226,10 +228,10 @@ export function Dashboard() {
         result = await shopifyAPI.bulkRemoveTagsFromSegment(
           bulkTaggingState.segmentId, 
           tags,
-          (current, total, message) => {
+          (current: number, total: number, skipped: number, message: string) => {
             setBulkTaggingState(prev => ({
               ...prev,
-              progress: { current, total, message }
+              progress: { current, total, skipped, message }
             }));
           }
         );
@@ -241,7 +243,7 @@ export function Dashboard() {
         const action = bulkTaggingState.operation === 'add' ? 'added to' : 'removed from';
         
         setSuccess(
-          `Successfully ${action} ${result.processedCount} customers in "${segmentName}" with tags: ${tags.join(', ')}`
+          `Successfully ${action} ${result.processedCount} customers in "${segmentName}" with tags: ${tags.join(', ')}${result.skippedCount > 0 ? ` (Skipped: ${result.skippedCount})` : ''}`
         );
         handleCancelBulkTagging();
       } else {
@@ -534,6 +536,11 @@ export function Dashboard() {
                                 <div className="flex items-center justify-between">
                                   <span className="text-sm font-medium text-blue-900">
                                     Progress: {bulkTaggingState.progress.current}/{bulkTaggingState.progress.total}
+                                    {bulkTaggingState.progress.skipped > 0 && (
+                                      <span className="text-orange-600 ml-2">
+                                        (Skipped: {bulkTaggingState.progress.skipped})
+                                      </span>
+                                    )}
                                   </span>
                                   <span className="text-xs text-blue-700">
                                     {bulkTaggingState.progress.total > 0 
