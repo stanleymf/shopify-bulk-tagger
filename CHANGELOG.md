@@ -12,6 +12,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Analytics dashboard for tag operations
 - Bulk rule import/export functionality
 
+## [1.3.2] - 2025-01-14
+
+### Fixed
+- Confirmed Load Count functionality working correctly
+- Customer counts persist in localStorage after loading
+- Load Count buttons appear when customer_count is undefined
+- Customer count badges replace Load Count buttons after successful loading
+
+### Technical Notes
+- Load Count buttons are hidden when segments already have customer counts loaded
+- This is expected behavior to prevent redundant API calls
+- Customer counts are cached locally for performance
+
 ## [1.3.1] - 2025-01-14
 
 ### Added ✨
