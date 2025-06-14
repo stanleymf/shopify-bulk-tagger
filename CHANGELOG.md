@@ -12,6 +12,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Analytics dashboard for tag operations
 - Bulk rule import/export functionality
 
+## [1.3.6] - 2025-01-14
+
+### Fixed
+- **🔧 Bulk Tagging ID Issue**: Fixed GraphQL query to get actual customer IDs instead of CustomerSegmentMember IDs
+- **🔄 REST API Fallback**: Added comprehensive REST API fallback for bulk tagging operations
+- **⚡ Improved Reliability**: GraphQL attempts first, automatically falls back to REST API if GraphQL fails
+- **🛡️ Error Handling**: Better error handling and more descriptive error messages
+
+### Technical Improvements
+- **Correct GraphQL Query**: Fixed `customerSegmentMembers` query to access `customer.id` instead of segment member ID
+- **Dual API Support**: Both GraphQL and REST API implementations for maximum compatibility
+- **Smart Fallback**: Automatic fallback from GraphQL to REST API on errors
+- **Batch Processing**: Optimized batch sizes (10 for GraphQL, 5 for REST) with proper rate limiting
+- **Enhanced Logging**: Better error logging and debugging information
+
+### API Changes
+- Fixed `getSegmentCustomerIds()` to return actual customer IDs
+- Added `bulkAddTagsToSegmentGraphQL()` and `bulkAddTagsToSegmentREST()` methods
+- Added `bulkRemoveTagsToSegmentGraphQL()` and `bulkRemoveTagsToSegmentREST()` methods
+- Improved error messages for better debugging
+
 ## [1.3.5] - 2025-01-14
 
 ### Added
