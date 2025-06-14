@@ -28,10 +28,18 @@ export function Dashboard() {
   const [success, setSuccess] = useState<string | null>(null);
 
   // Bulk tagging state
-  const [bulkTaggingSegmentId, setBulkTaggingSegmentId] = useState<number | null>(null);
+  const [bulkTaggingState, setBulkTaggingState] = useState<{
+    isActive: boolean;
+    segmentId: number | null;
+    operation: 'add' | 'remove' | null;
+    progress: { current: number; total: number; message: string };
+  }>({
+    isActive: false,
+    segmentId: null,
+    operation: null,
+    progress: { current: 0, total: 0, message: '' }
+  });
   const [bulkTagsInput, setBulkTagsInput] = useState("");
-  const [isBulkTagging, setIsBulkTagging] = useState(false);
-  const [bulkTaggingMode, setBulkTaggingMode] = useState<'add' | 'remove' | null>(null);
 
   // Load segments on component mount
   useEffect(() => {
@@ -149,55 +157,88 @@ export function Dashboard() {
 
   // Bulk tagging handlers
   const handleStartBulkTagging = (segmentId: number, mode: 'add' | 'remove') => {
-    setBulkTaggingSegmentId(segmentId);
-    setBulkTaggingMode(mode);
+    setBulkTaggingState({
+      isActive: false,
+      segmentId,
+      operation: mode,
+      progress: { current: 0, total: 0, message: '' }
+    });
     setBulkTagsInput("");
     setError(null);
     setSuccess(null);
   };
 
   const handleCancelBulkTagging = () => {
-    setBulkTaggingSegmentId(null);
-    setBulkTaggingMode(null);
+    setBulkTaggingState({
+      isActive: false,
+      segmentId: null,
+      operation: null,
+      progress: { current: 0, total: 0, message: '' }
+    });
     setBulkTagsInput("");
   };
 
-  const handleBulkTagging = async () => {
-    if (!bulkTaggingSegmentId || !bulkTaggingMode || !bulkTagsInput.trim()) {
+  const handleExecuteBulkTagging = async () => {
+    if (!bulkTaggingState.segmentId || !bulkTaggingState.operation || !bulkTagsInput.trim()) {
       setError('Please enter tags to process');
       return;
     }
 
-    setIsBulkTagging(true);
+    if (!shopifyAPI.isInitialized()) {
+      setError('Please connect your Shopify store in Settings first');
+      return;
+    }
+
+    // Parse tags from input (comma-separated)
+    const tags = bulkTagsInput
+      .split(',')
+      .map(tag => tag.trim())
+      .filter(tag => tag.length > 0);
+
+    if (tags.length === 0) {
+      setError('Please enter valid tags');
+      return;
+    }
+
+    setBulkTaggingState(prev => ({
+      ...prev,
+      isActive: true,
+      progress: { current: 0, total: 0, message: 'Initializing...' }
+    }));
+
     setError(null);
     setSuccess(null);
 
     try {
-      if (!shopifyAPI.isInitialized()) {
-        throw new Error('Please connect your Shopify store in Settings first');
-      }
-
-      // Parse tags from input (comma-separated)
-      const tags = bulkTagsInput
-        .split(',')
-        .map(tag => tag.trim())
-        .filter(tag => tag.length > 0);
-
-      if (tags.length === 0) {
-        throw new Error('Please enter valid tags');
-      }
-
       let result;
-      if (bulkTaggingMode === 'add') {
-        result = await shopifyAPI.bulkAddTagsToSegment(bulkTaggingSegmentId, tags);
+      if (bulkTaggingState.operation === 'add') {
+        result = await shopifyAPI.bulkAddTagsToSegment(
+          bulkTaggingState.segmentId, 
+          tags,
+          (current, total, message) => {
+            setBulkTaggingState(prev => ({
+              ...prev,
+              progress: { current, total, message }
+            }));
+          }
+        );
       } else {
-        result = await shopifyAPI.bulkRemoveTagsFromSegment(bulkTaggingSegmentId, tags);
+        result = await shopifyAPI.bulkRemoveTagsFromSegment(
+          bulkTaggingState.segmentId, 
+          tags,
+          (current, total, message) => {
+            setBulkTaggingState(prev => ({
+              ...prev,
+              progress: { current, total, message }
+            }));
+          }
+        );
       }
 
       if (result.success) {
-        const segment = segments.find(s => s.id === bulkTaggingSegmentId);
+        const segment = segments.find(s => s.id === bulkTaggingState.segmentId);
         const segmentName = segment?.name || 'Unknown Segment';
-        const action = bulkTaggingMode === 'add' ? 'added to' : 'removed from';
+        const action = bulkTaggingState.operation === 'add' ? 'added to' : 'removed from';
         
         setSuccess(
           `Successfully ${action} ${result.processedCount} customers in "${segmentName}" with tags: ${tags.join(', ')}`
@@ -228,7 +269,10 @@ export function Dashboard() {
       const errorMessage = err instanceof Error ? err.message : 'Failed to process bulk tagging';
       setError(errorMessage);
     } finally {
-      setIsBulkTagging(false);
+      setBulkTaggingState(prev => ({
+        ...prev,
+        isActive: false
+      }));
     }
   };
 
@@ -461,11 +505,11 @@ export function Dashboard() {
                         </div>
                         
                         {/* Bulk Tagging Section */}
-                        {bulkTaggingSegmentId === segment.id ? (
+                        {bulkTaggingState.segmentId === segment.id ? (
                           <div className="bg-blue-50 border border-blue-200 rounded-md p-3 space-y-3">
                             <div className="flex items-center justify-between">
                               <div className="text-sm font-medium text-blue-900">
-                                {bulkTaggingMode === 'add' ? 'Add Tags' : 'Remove Tags'}
+                                {bulkTaggingState.operation === 'add' ? 'Add Tags' : 'Remove Tags'}
                               </div>
                               <Button
                                 size="sm"
@@ -481,16 +525,51 @@ export function Dashboard() {
                               value={bulkTagsInput}
                               onChange={(e) => setBulkTagsInput(e.target.value)}
                               className="text-sm"
-                              disabled={isBulkTagging}
+                              disabled={bulkTaggingState.isActive}
                             />
+                            
+                            {/* Progress Display */}
+                            {bulkTaggingState.isActive && (
+                              <div className="bg-white border border-blue-300 rounded-md p-3 space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-sm font-medium text-blue-900">
+                                    Progress: {bulkTaggingState.progress.current}/{bulkTaggingState.progress.total}
+                                  </span>
+                                  <span className="text-xs text-blue-700">
+                                    {bulkTaggingState.progress.total > 0 
+                                      ? `${Math.round((bulkTaggingState.progress.current / bulkTaggingState.progress.total) * 100)}%`
+                                      : '0%'
+                                    }
+                                  </span>
+                                </div>
+                                
+                                {/* Progress Bar */}
+                                <div className="w-full bg-blue-100 rounded-full h-2">
+                                  <div 
+                                    className="bg-blue-600 h-2 rounded-full transition-all duration-300 ease-out"
+                                    style={{ 
+                                      width: bulkTaggingState.progress.total > 0 
+                                        ? `${(bulkTaggingState.progress.current / bulkTaggingState.progress.total) * 100}%`
+                                        : '0%'
+                                    }}
+                                  />
+                                </div>
+                                
+                                {/* Status Message */}
+                                <div className="text-xs text-blue-700">
+                                  {bulkTaggingState.progress.message}
+                                </div>
+                              </div>
+                            )}
+                            
                             <div className="flex gap-2">
                               <Button
                                 size="sm"
-                                onClick={handleBulkTagging}
-                                disabled={isBulkTagging || !bulkTagsInput.trim()}
+                                onClick={handleExecuteBulkTagging}
+                                disabled={bulkTaggingState.isActive || !bulkTagsInput.trim()}
                                 className="bg-blue-600 hover:bg-blue-700 text-xs"
                               >
-                                {isBulkTagging ? (
+                                {bulkTaggingState.isActive ? (
                                   <>
                                     <Loader2 className="h-3 w-3 mr-1 animate-spin" />
                                     Processing...
@@ -498,7 +577,7 @@ export function Dashboard() {
                                 ) : (
                                   <>
                                     <Tag className="h-3 w-3 mr-1" />
-                                    {bulkTaggingMode === 'add' ? 'Add Tags' : 'Remove Tags'}
+                                    {bulkTaggingState.operation === 'add' ? 'Add Tags' : 'Remove Tags'}
                                   </>
                                 )}
                               </Button>
@@ -506,7 +585,7 @@ export function Dashboard() {
                                 size="sm"
                                 variant="outline"
                                 onClick={handleCancelBulkTagging}
-                                disabled={isBulkTagging}
+                                disabled={bulkTaggingState.isActive}
                                 className="text-xs"
                               >
                                 Cancel

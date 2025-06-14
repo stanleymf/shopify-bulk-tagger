@@ -12,6 +12,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Analytics dashboard for tag operations
 - Bulk rule import/export functionality
 
+## [1.5.0] - 2025-06-14
+
+### Added - MAJOR FEATURE: Real-time Progress Tracking
+- **Live Progress Display**: Real-time progress tracking for bulk tagging operations showing "1/5000...2/5000...3/5000"
+- **Visual Progress Bar**: Animated progress bar with percentage completion
+- **Detailed Status Messages**: Real-time status updates during each phase of the operation
+- **Timeout Prevention**: Progress callbacks prevent browser timeouts during long operations
+- **Batch Progress Updates**: Shows progress for each customer and batch completion
+
+### Progress Tracking Features
+- **Customer-by-Customer Updates**: Live counter showing current customer being processed
+- **Percentage Completion**: Real-time percentage display (e.g., "45% complete")
+- **Phase Indicators**: Clear status messages for each operation phase:
+  - "Fetching customer list from segment..."
+  - "Found 5,667 customers. Starting tag addition..."
+  - "Tagged customer 1/5667"
+  - "Tagged customer 2/5667"
+  - "Processed batch 1/57"
+  - "Completed! Successfully tagged 5667/5667 customers"
+
+### UI Enhancements
+- **Progress Panel**: Dedicated progress display panel during bulk operations
+- **Animated Progress Bar**: Smooth progress bar with blue gradient
+- **Status Messages**: Real-time status text updates
+- **Non-blocking Interface**: Progress updates don't freeze the UI
+- **Error Handling**: Progress tracking continues even if individual customers fail
+
+### Technical Implementation
+- **Progress Callbacks**: Added optional `onProgress` parameter to all bulk tagging methods
+- **Real-time Updates**: Progress state updates trigger immediate UI re-renders
+- **Batch Tracking**: Progress updates for both individual customers and batch completions
+- **Memory Efficient**: Progress tracking doesn't impact performance for large operations
+- **Timeout Prevention**: Regular progress updates prevent browser/server timeouts
+
+### Performance Benefits
+- **Prevents Timeouts**: Regular progress callbacks keep connections alive
+- **User Confidence**: Users can see operations are progressing, not stuck
+- **Error Visibility**: Failed customers are tracked and reported in progress
+- **Cancellation Ready**: Foundation for future operation cancellation feature
+
+### User Experience
+- **Anxiety Reduction**: Users know exactly what's happening during long operations
+- **Progress Visibility**: Clear indication of completion time and remaining work
+- **Error Transparency**: Failed operations are clearly indicated in progress
+- **Professional Feel**: Enterprise-grade progress tracking for large-scale operations
+
+### Example Progress Flow
+```
+Initializing...
+Fetching customer list from segment...
+Found 5667 customers. Starting tag removal...
+Untagged customer 1/5667
+Untagged customer 2/5667
+...
+Processed batch 10/57
+...
+Untagged customer 5665/5667
+Untagged customer 5666/5667
+Untagged customer 5667/5667
+Completed! Successfully untagged 5667/5667 customers
+```
+
 ## [1.4.2] - 2025-06-14
 
 ### Enhanced - MASSIVE SCALE: 30,000 Customer Support

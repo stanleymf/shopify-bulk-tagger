@@ -998,7 +998,11 @@ class ShopifyAPIService {
   /**
    * Bulk add tags to all customers in a segment
    */
-  async bulkAddTagsToSegment(segmentId: number, tagsToAdd: string[]): Promise<{
+  async bulkAddTagsToSegment(
+    segmentId: number, 
+    tagsToAdd: string[], 
+    onProgress?: (current: number, total: number, message: string) => void
+  ): Promise<{
     success: boolean;
     processedCount: number;
     errors: string[];
@@ -1014,10 +1018,10 @@ class ShopifyAPIService {
     try {
       // Try GraphQL first, fallback to REST if it fails
       try {
-        return await this.bulkAddTagsToSegmentGraphQL(segmentId, tagsToAdd);
+        return await this.bulkAddTagsToSegmentGraphQL(segmentId, tagsToAdd, onProgress);
       } catch (graphqlError) {
         console.warn('GraphQL bulk tagging failed, trying REST API fallback:', graphqlError);
-        return await this.bulkAddTagsToSegmentREST(segmentId, tagsToAdd);
+        return await this.bulkAddTagsToSegmentREST(segmentId, tagsToAdd, onProgress);
       }
     } catch (error) {
       console.error('Bulk add tags failed:', error);
@@ -1028,7 +1032,11 @@ class ShopifyAPIService {
   /**
    * Bulk remove tags from all customers in a segment
    */
-  async bulkRemoveTagsFromSegment(segmentId: number, tagsToRemove: string[]): Promise<{
+  async bulkRemoveTagsFromSegment(
+    segmentId: number, 
+    tagsToRemove: string[], 
+    onProgress?: (current: number, total: number, message: string) => void
+  ): Promise<{
     success: boolean;
     processedCount: number;
     errors: string[];
@@ -1044,10 +1052,10 @@ class ShopifyAPIService {
     try {
       // Try GraphQL first, fallback to REST if it fails
       try {
-        return await this.bulkRemoveTagsFromSegmentGraphQL(segmentId, tagsToRemove);
+        return await this.bulkRemoveTagsFromSegmentGraphQL(segmentId, tagsToRemove, onProgress);
       } catch (graphqlError) {
         console.warn('GraphQL bulk tagging failed, trying REST API fallback:', graphqlError);
-        return await this.bulkRemoveTagsFromSegmentREST(segmentId, tagsToRemove);
+        return await this.bulkRemoveTagsFromSegmentREST(segmentId, tagsToRemove, onProgress);
       }
     } catch (error) {
       console.error('Bulk remove tags failed:', error);
@@ -1058,12 +1066,17 @@ class ShopifyAPIService {
   /**
    * GraphQL implementation for bulk add tags
    */
-  private async bulkAddTagsToSegmentGraphQL(segmentId: number, tagsToAdd: string[]): Promise<{
+  private async bulkAddTagsToSegmentGraphQL(
+    segmentId: number, 
+    tagsToAdd: string[], 
+    onProgress?: (current: number, total: number, message: string) => void
+  ): Promise<{
     success: boolean;
     processedCount: number;
     errors: string[];
   }> {
     // Get customer IDs from the segment
+    onProgress?.(0, 0, 'Fetching customer list from segment...');
     const customerIds = await this.getSegmentCustomerIds(segmentId);
     
     if (!customerIds.length) {
@@ -1074,19 +1087,26 @@ class ShopifyAPIService {
       };
     }
 
+    onProgress?.(0, customerIds.length, `Found ${customerIds.length} customers. Starting tag addition...`);
+
     // Use batch processing for GraphQL (more reliable than bulk operations)
-    return await this.batchAddTags(customerIds, tagsToAdd);
+    return await this.batchAddTags(customerIds, tagsToAdd, onProgress);
   }
 
   /**
    * GraphQL implementation for bulk remove tags
    */
-  private async bulkRemoveTagsFromSegmentGraphQL(segmentId: number, tagsToRemove: string[]): Promise<{
+  private async bulkRemoveTagsFromSegmentGraphQL(
+    segmentId: number, 
+    tagsToRemove: string[], 
+    onProgress?: (current: number, total: number, message: string) => void
+  ): Promise<{
     success: boolean;
     processedCount: number;
     errors: string[];
   }> {
     // Get customer IDs from the segment
+    onProgress?.(0, 0, 'Fetching customer list from segment...');
     const customerIds = await this.getSegmentCustomerIds(segmentId);
     
     if (!customerIds.length) {
@@ -1097,14 +1117,20 @@ class ShopifyAPIService {
       };
     }
 
-    // Use batch processing for GraphQL
-    return await this.batchRemoveTags(customerIds, tagsToRemove);
+    onProgress?.(0, customerIds.length, `Found ${customerIds.length} customers. Starting tag removal...`);
+
+    // Use batch processing for GraphQL (more reliable than bulk operations)
+    return await this.batchRemoveTags(customerIds, tagsToRemove, onProgress);
   }
 
   /**
    * REST API fallback for bulk add tags
    */
-  private async bulkAddTagsToSegmentREST(segmentId: number, tagsToAdd: string[]): Promise<{
+  private async bulkAddTagsToSegmentREST(
+    segmentId: number, 
+    tagsToAdd: string[], 
+    onProgress?: (current: number, total: number, message: string) => void
+  ): Promise<{
     success: boolean;
     processedCount: number;
     errors: string[];
@@ -1120,13 +1146,17 @@ class ShopifyAPIService {
       };
     }
 
-    return await this.batchAddTagsREST(customers, tagsToAdd);
+    return await this.batchAddTagsREST(customers, tagsToAdd, onProgress);
   }
 
   /**
    * REST API fallback for bulk remove tags
    */
-  private async bulkRemoveTagsFromSegmentREST(segmentId: number, tagsToRemove: string[]): Promise<{
+  private async bulkRemoveTagsFromSegmentREST(
+    segmentId: number, 
+    tagsToRemove: string[], 
+    onProgress?: (current: number, total: number, message: string) => void
+  ): Promise<{
     success: boolean;
     processedCount: number;
     errors: string[];
@@ -1142,7 +1172,7 @@ class ShopifyAPIService {
       };
     }
 
-    return await this.batchRemoveTagsREST(customers, tagsToRemove);
+    return await this.batchRemoveTagsREST(customers, tagsToRemove, onProgress);
   }
 
   /**
@@ -1158,7 +1188,7 @@ class ShopifyAPIService {
   /**
    * Batch add tags using REST API
    */
-  private async batchAddTagsREST(customers: ShopifyCustomer[], tagsToAdd: string[]): Promise<{
+  private async batchAddTagsREST(customers: ShopifyCustomer[], tagsToAdd: string[], onProgress?: (current: number, total: number, message: string) => void): Promise<{
     success: boolean;
     processedCount: number;
     errors: string[];
@@ -1166,20 +1196,29 @@ class ShopifyAPIService {
     const errors: string[] = [];
     let processedCount = 0;
     const batchSize = 5; // Smaller batches for REST API
+    const totalCustomers = customers.length;
+
+    onProgress?.(0, totalCustomers, `Starting to add tags to ${totalCustomers} customers via REST API...`);
 
     for (let i = 0; i < customers.length; i += batchSize) {
       const batch = customers.slice(i, i + batchSize);
       
-      const promises = batch.map(async (customer) => {
+      const promises = batch.map(async (customer, index) => {
         try {
           const currentTags = ShopifyAPIService.parseTags(customer.tags);
-          const newTags = [...new Set([...currentTags, ...tagsToAdd])]; // Remove duplicates
+          const newTags = [...new Set([...currentTags, ...tagsToAdd])];
           const updatedTagsString = ShopifyAPIService.formatTags(newTags);
           
           await this.updateCustomerTagsREST(customer.id, updatedTagsString);
           processedCount++;
+          
+          // Update progress for each customer
+          const currentProgress = i + index + 1;
+          onProgress?.(currentProgress, totalCustomers, `Tagged customer ${currentProgress}/${totalCustomers} (REST)`);
+          
         } catch (error) {
           errors.push(`Failed to update customer ${customer.id}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          onProgress?.(i + index + 1, totalCustomers, `Failed to tag customer ${i + index + 1}/${totalCustomers}`);
         }
       });
 
@@ -1187,9 +1226,12 @@ class ShopifyAPIService {
       
       // Add delay between batches
       if (i + batchSize < customers.length) {
-        await new Promise(resolve => setTimeout(resolve, 1000)); // Longer delay for REST
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        onProgress?.(Math.min(i + batchSize, totalCustomers), totalCustomers, `Processed batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(totalCustomers / batchSize)} (REST)`);
       }
     }
+
+    onProgress?.(processedCount, totalCustomers, `Completed! Successfully tagged ${processedCount}/${totalCustomers} customers via REST API`);
 
     return {
       success: errors.length === 0,
@@ -1201,7 +1243,7 @@ class ShopifyAPIService {
   /**
    * Batch remove tags using REST API
    */
-  private async batchRemoveTagsREST(customers: ShopifyCustomer[], tagsToRemove: string[]): Promise<{
+  private async batchRemoveTagsREST(customers: ShopifyCustomer[], tagsToRemove: string[], onProgress?: (current: number, total: number, message: string) => void): Promise<{
     success: boolean;
     processedCount: number;
     errors: string[];
@@ -1209,11 +1251,14 @@ class ShopifyAPIService {
     const errors: string[] = [];
     let processedCount = 0;
     const batchSize = 5;
+    const totalCustomers = customers.length;
+
+    onProgress?.(0, totalCustomers, `Starting to remove tags from ${totalCustomers} customers via REST API...`);
 
     for (let i = 0; i < customers.length; i += batchSize) {
       const batch = customers.slice(i, i + batchSize);
       
-      const promises = batch.map(async (customer) => {
+      const promises = batch.map(async (customer, index) => {
         try {
           const currentTags = ShopifyAPIService.parseTags(customer.tags);
           const filteredTags = currentTags.filter(tag => !tagsToRemove.includes(tag));
@@ -1221,8 +1266,14 @@ class ShopifyAPIService {
           
           await this.updateCustomerTagsREST(customer.id, updatedTagsString);
           processedCount++;
+          
+          // Update progress for each customer
+          const currentProgress = i + index + 1;
+          onProgress?.(currentProgress, totalCustomers, `Untagged customer ${currentProgress}/${totalCustomers} (REST)`);
+          
         } catch (error) {
           errors.push(`Failed to update customer ${customer.id}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          onProgress?.(i + index + 1, totalCustomers, `Failed to untag customer ${i + index + 1}/${totalCustomers}`);
         }
       });
 
@@ -1231,8 +1282,11 @@ class ShopifyAPIService {
       // Add delay between batches
       if (i + batchSize < customers.length) {
         await new Promise(resolve => setTimeout(resolve, 1000));
+        onProgress?.(Math.min(i + batchSize, totalCustomers), totalCustomers, `Processed batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(totalCustomers / batchSize)} (REST)`);
       }
     }
+
+    onProgress?.(processedCount, totalCustomers, `Completed! Successfully untagged ${processedCount}/${totalCustomers} customers via REST API`);
 
     return {
       success: errors.length === 0,
@@ -1244,7 +1298,7 @@ class ShopifyAPIService {
   /**
    * Batch process tag additions for GraphQL (smaller datasets)
    */
-  private async batchAddTags(customerIds: string[], tagsToAdd: string[]): Promise<{
+  private async batchAddTags(customerIds: string[], tagsToAdd: string[], onProgress?: (current: number, total: number, message: string) => void): Promise<{
     success: boolean;
     processedCount: number;
     errors: string[];
@@ -1252,11 +1306,14 @@ class ShopifyAPIService {
     const errors: string[] = [];
     let processedCount = 0;
     const batchSize = 10; // Process in smaller batches to avoid rate limits
+    const totalCustomers = customerIds.length;
+
+    onProgress?.(0, totalCustomers, `Starting to add tags to ${totalCustomers} customers...`);
 
     for (let i = 0; i < customerIds.length; i += batchSize) {
       const batch = customerIds.slice(i, i + batchSize);
       
-      const promises = batch.map(async (customerId) => {
+      const promises = batch.map(async (customerId, index) => {
         try {
           // Get current customer tags first
           const customer = await this.getCustomerById(customerId);
@@ -1266,8 +1323,14 @@ class ShopifyAPIService {
           
           await this.updateCustomerTagsById(customerId, updatedTagsString);
           processedCount++;
+          
+          // Update progress for each customer
+          const currentProgress = i + index + 1;
+          onProgress?.(currentProgress, totalCustomers, `Tagged customer ${currentProgress}/${totalCustomers}`);
+          
         } catch (error) {
           errors.push(`Failed to update customer ${customerId}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          onProgress?.(i + index + 1, totalCustomers, `Failed to tag customer ${i + index + 1}/${totalCustomers}`);
         }
       });
 
@@ -1276,8 +1339,11 @@ class ShopifyAPIService {
       // Add small delay between batches to respect rate limits
       if (i + batchSize < customerIds.length) {
         await new Promise(resolve => setTimeout(resolve, 500));
+        onProgress?.(Math.min(i + batchSize, totalCustomers), totalCustomers, `Processed batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(totalCustomers / batchSize)}`);
       }
     }
+
+    onProgress?.(processedCount, totalCustomers, `Completed! Successfully tagged ${processedCount}/${totalCustomers} customers`);
 
     return {
       success: errors.length === 0,
@@ -1289,7 +1355,7 @@ class ShopifyAPIService {
   /**
    * Batch process tag removals for GraphQL (smaller datasets)
    */
-  private async batchRemoveTags(customerIds: string[], tagsToRemove: string[]): Promise<{
+  private async batchRemoveTags(customerIds: string[], tagsToRemove: string[], onProgress?: (current: number, total: number, message: string) => void): Promise<{
     success: boolean;
     processedCount: number;
     errors: string[];
@@ -1297,11 +1363,14 @@ class ShopifyAPIService {
     const errors: string[] = [];
     let processedCount = 0;
     const batchSize = 10;
+    const totalCustomers = customerIds.length;
+
+    onProgress?.(0, totalCustomers, `Starting to remove tags from ${totalCustomers} customers...`);
 
     for (let i = 0; i < customerIds.length; i += batchSize) {
       const batch = customerIds.slice(i, i + batchSize);
       
-      const promises = batch.map(async (customerId) => {
+      const promises = batch.map(async (customerId, index) => {
         try {
           // Get current customer tags first
           const customer = await this.getCustomerById(customerId);
@@ -1311,8 +1380,14 @@ class ShopifyAPIService {
           
           await this.updateCustomerTagsById(customerId, updatedTagsString);
           processedCount++;
+          
+          // Update progress for each customer
+          const currentProgress = i + index + 1;
+          onProgress?.(currentProgress, totalCustomers, `Untagged customer ${currentProgress}/${totalCustomers}`);
+          
         } catch (error) {
           errors.push(`Failed to update customer ${customerId}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          onProgress?.(i + index + 1, totalCustomers, `Failed to untag customer ${i + index + 1}/${totalCustomers}`);
         }
       });
 
@@ -1321,8 +1396,11 @@ class ShopifyAPIService {
       // Add small delay between batches
       if (i + batchSize < customerIds.length) {
         await new Promise(resolve => setTimeout(resolve, 500));
+        onProgress?.(Math.min(i + batchSize, totalCustomers), totalCustomers, `Processed batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(totalCustomers / batchSize)}`);
       }
     }
+
+    onProgress?.(processedCount, totalCustomers, `Completed! Successfully untagged ${processedCount}/${totalCustomers} customers`);
 
     return {
       success: errors.length === 0,
