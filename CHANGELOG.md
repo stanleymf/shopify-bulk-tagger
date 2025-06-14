@@ -13,6 +13,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Analytics dashboard for tag operations
 - Bulk rule import/export functionality
 
+## [1.2.1] - 2024-01-15
+
+### Changed
+- Removed all mock/static data from the application
+- Added proper empty states for segments and rules
+- Enhanced user experience with clear messaging when no data is available
+
+### Added
+- Empty state components for Dashboard and Rules pages
+- Call-to-action buttons for connecting Shopify store
+- Warning messages when trying to create rules without segments
+- Improved visual feedback for empty data scenarios
+
+### Features
+- Clean slate application ready for real Shopify integration
+- Professional empty states with helpful guidance
+- Clear user flow for initial setup and data population
+- Better UX for first-time users
+
+### Technical Details
+- Cleared mockSegments and mockRules arrays
+- Added conditional rendering for empty states
+- Enhanced form validation for empty segment lists
+- Maintained TypeScript interfaces for type safety
+
 ## [1.2.0] - 2024-01-15
 
 ### Added

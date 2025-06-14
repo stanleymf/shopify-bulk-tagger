@@ -17,7 +17,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Plus, MoreHorizontal, Edit, Trash2, Settings } from "lucide-react";
+import { Plus, MoreHorizontal, Edit, Trash2, Settings, AlertCircle } from "lucide-react";
 import { mockRules, type TaggingRule } from "@/data/mockData";
 import { RuleForm } from "./RuleForm";
 
@@ -69,20 +69,14 @@ export function Rules() {
     return new Date(dateString).toLocaleDateString();
   };
 
-  const formatActions = (actions: TaggingRule['actions']) => {
-    return actions.map(action => 
-      `${action.type === 'add' ? '+' : '-'}${action.tag}`
-    ).join(', ');
-  };
-
-  const activeRulesCount = rules.filter(rule => rule.isActive).length;
+  const activeRules = rules.filter(rule => rule.isActive).length;
 
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-gray-900">Tagging Rules</h1>
-          <p className="text-gray-600 mt-1">Automate customer tagging based on segment membership</p>
+          <p className="text-gray-600 mt-1">Create and manage automated tagging rules for your customer segments</p>
         </div>
         <Button 
           onClick={handleCreateRule}
@@ -110,7 +104,7 @@ export function Rules() {
             <Settings className="h-4 w-4 text-gray-400" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">{activeRulesCount}</div>
+            <div className="text-2xl font-bold text-gray-900">{activeRules}</div>
           </CardContent>
         </Card>
 
@@ -120,7 +114,7 @@ export function Rules() {
             <Settings className="h-4 w-4 text-gray-400" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-gray-500">{rules.length - activeRulesCount}</div>
+            <div className="text-2xl font-bold text-gray-900">{rules.length - activeRules}</div>
           </CardContent>
         </Card>
       </div>
@@ -132,9 +126,11 @@ export function Rules() {
         <CardContent>
           {rules.length === 0 ? (
             <div className="text-center py-12">
-              <Settings className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">No rules created yet</h3>
-              <p className="text-gray-600 mb-4">Create your first tagging rule to automate customer management</p>
+              <AlertCircle className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 mb-2">No tagging rules created</h3>
+              <p className="text-gray-600 mb-6 max-w-md mx-auto">
+                Create your first tagging rule to automatically manage customer tags based on segment membership.
+              </p>
               <Button onClick={handleCreateRule} className="bg-blue-600 hover:bg-blue-700">
                 <Plus className="h-4 w-4 mr-2" />
                 Create Your First Rule
@@ -149,7 +145,7 @@ export function Rules() {
                   <TableHead className="font-medium text-gray-700">Actions</TableHead>
                   <TableHead className="font-medium text-gray-700">Status</TableHead>
                   <TableHead className="font-medium text-gray-700">Created</TableHead>
-                  <TableHead className="font-medium text-gray-700 w-20" />
+                  <TableHead className="font-medium text-gray-700">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -157,22 +153,26 @@ export function Rules() {
                   <TableRow key={rule.id} className="hover:bg-gray-50">
                     <TableCell className="font-medium text-gray-900">{rule.name}</TableCell>
                     <TableCell className="text-gray-700">{rule.triggerSegment}</TableCell>
-                    <TableCell className="text-gray-600 font-mono text-sm">
-                      {formatActions(rule.actions)}
+                    <TableCell className="text-gray-700">
+                      <div className="space-y-1">
+                        {rule.actions.map((action, index) => (
+                          <Badge 
+                            key={index} 
+                            variant={action.type === 'add' ? 'default' : 'secondary'}
+                            className={action.type === 'add' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}
+                          >
+                            {action.type === 'add' ? '+' : '-'} {action.tag}
+                          </Badge>
+                        ))}
+                      </div>
                     </TableCell>
                     <TableCell>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center space-x-2">
                         <Switch
                           checked={rule.isActive}
                           onCheckedChange={() => handleToggleRule(rule.id)}
                         />
-                        <Badge 
-                          variant="secondary" 
-                          className={rule.isActive 
-                            ? "bg-green-100 text-green-800 hover:bg-green-100" 
-                            : "bg-gray-100 text-gray-600 hover:bg-gray-100"
-                          }
-                        >
+                        <Badge variant={rule.isActive ? 'default' : 'secondary'}>
                           {rule.isActive ? 'Active' : 'Inactive'}
                         </Badge>
                       </div>
@@ -181,20 +181,20 @@ export function Rules() {
                     <TableCell>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                          <Button variant="ghost" className="h-8 w-8 p-0">
                             <MoreHorizontal className="h-4 w-4" />
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem onClick={() => handleEditRule(rule)}>
-                            <Edit className="h-4 w-4 mr-2" />
+                            <Edit className="mr-2 h-4 w-4" />
                             Edit
                           </DropdownMenuItem>
                           <DropdownMenuItem 
                             onClick={() => handleDeleteRule(rule.id)}
-                            className="text-red-600 focus:text-red-600"
+                            className="text-red-600"
                           >
-                            <Trash2 className="h-4 w-4 mr-2" />
+                            <Trash2 className="mr-2 h-4 w-4" />
                             Delete
                           </DropdownMenuItem>
                         </DropdownMenuContent>

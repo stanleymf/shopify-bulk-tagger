@@ -120,14 +120,25 @@ export function RuleForm({ isOpen, onClose, onSave, editingRule }: RuleFormProps
                   <SelectValue placeholder="Select segment" />
                 </SelectTrigger>
                 <SelectContent>
-                  {mockSegments.map((segment) => (
-                    <SelectItem key={segment.id} value={segment.name}>
-                      {segment.name}
+                  {mockSegments.length === 0 ? (
+                    <SelectItem value="" disabled>
+                      No segments available
                     </SelectItem>
-                  ))}
+                  ) : (
+                    mockSegments.map((segment) => (
+                      <SelectItem key={segment.id} value={segment.name}>
+                        {segment.name}
+                      </SelectItem>
+                    ))
+                  )}
                 </SelectContent>
               </Select>
             </div>
+            {mockSegments.length === 0 && (
+              <p className="text-sm text-amber-600 mt-1">
+                ⚠️ No customer segments found. Please sync your Shopify store first.
+              </p>
+            )}
           </div>
 
           <div className="space-y-4">
