@@ -3,13 +3,16 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { 
   Users, 
   RefreshCw, 
   Plus, 
   AlertCircle,
   CheckCircle,
-  Loader2
+  Loader2,
+  Search,
+  Hash
 } from "lucide-react";
 import { shopifyAPI, ShopifyCustomerSegment } from "@/lib/shopify-api";
 import { useConfig } from "@/lib/config-context";
@@ -17,6 +20,7 @@ import { useConfig } from "@/lib/config-context";
 export function Dashboard() {
   const { isConnected } = useConfig();
   const [segments, setSegments] = useState<ShopifyCustomerSegment[]>([]);
+  const [searchTerm, setSearchTerm] = useState("");
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -25,6 +29,12 @@ export function Dashboard() {
   useEffect(() => {
     loadSegments();
   }, []);
+
+  // Filter segments based on search term
+  const filteredSegments = segments.filter(segment => 
+    segment.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (segment.query && segment.query.toLowerCase().includes(searchTerm.toLowerCase()))
+  );
 
   const loadSegments = () => {
     try {
@@ -59,6 +69,29 @@ export function Dashboard() {
     }
   };
 
+  const handleLoadCustomerCount = async (segmentId: number) => {
+    try {
+      // Set loading state
+      shopifyAPI.setSegmentCountLoading(segmentId, true);
+      loadSegments(); // Refresh UI to show loading state
+
+      // Fetch customer count
+      const count = await shopifyAPI.getSegmentCustomerCount(segmentId);
+      
+      // Update segment with count
+      shopifyAPI.updateSegmentCustomerCount(segmentId, count);
+      loadSegments(); // Refresh UI to show count
+      
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to load customer count';
+      setError(errorMessage);
+      
+      // Clear loading state on error
+      shopifyAPI.setSegmentCountLoading(segmentId, false);
+      loadSegments();
+    }
+  };
+
   const handleConnectStore = () => {
     // Navigate to settings page
     window.location.hash = '#settings';
@@ -84,6 +117,20 @@ export function Dashboard() {
         </Button>
       </div>
 
+      {/* Search Bar */}
+      {segments.length > 0 && (
+        <div className="relative max-w-md">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+          <Input
+            type="text"
+            placeholder="Search segments by name or query..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-10 pr-4 py-2 w-full"
+          />
+        </div>
+      )}
+
       {error && (
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
@@ -106,6 +153,11 @@ export function Dashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-gray-900">{segments.length}</div>
+            {searchTerm && (
+              <div className="text-sm text-gray-500 mt-1">
+                {filteredSegments.length} filtered
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -134,7 +186,14 @@ export function Dashboard() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg font-medium text-gray-900">Segments Overview</CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-lg font-medium text-gray-900">Segments Overview</CardTitle>
+            {searchTerm && filteredSegments.length !== segments.length && (
+              <div className="text-sm text-gray-500">
+                Showing {filteredSegments.length} of {segments.length} segments
+              </div>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           {!isConnected ? (
@@ -161,19 +220,58 @@ export function Dashboard() {
                 Sync Segments
               </Button>
             </div>
+          ) : filteredSegments.length === 0 ? (
+            <div className="text-center py-12">
+              <Search className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 mb-2">No segments match your search</h3>
+              <p className="text-gray-600 mb-6 max-w-md mx-auto">
+                Try adjusting your search terms or clear the search to see all segments.
+              </p>
+              <Button 
+                variant="outline" 
+                onClick={() => setSearchTerm("")}
+                className="border-gray-300 hover:bg-gray-50"
+              >
+                Clear Search
+              </Button>
+            </div>
           ) : (
             <div className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {segments.map((segment) => (
+                {filteredSegments.map((segment) => (
                   <div
                     key={segment.id}
                     className="border rounded-lg p-4 hover:shadow-md transition-shadow"
                   >
                     <div className="flex items-center justify-between mb-2">
                       <h3 className="font-medium text-gray-900 truncate">{segment.name}</h3>
-                      <Badge variant="secondary">
-                        {segment.customer_count || 0} customers
-                      </Badge>
+                      <div className="flex items-center gap-2">
+                        {segment.customer_count !== undefined ? (
+                          <Badge variant="secondary">
+                            {segment.customer_count} customers
+                          </Badge>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleLoadCustomerCount(segment.id)}
+                            disabled={segment.is_loading_count}
+                            className="text-xs h-6 px-2"
+                          >
+                            {segment.is_loading_count ? (
+                              <>
+                                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                                Loading...
+                              </>
+                            ) : (
+                              <>
+                                <Hash className="h-3 w-3 mr-1" />
+                                Load Count
+                              </>
+                            )}
+                          </Button>
+                        )}
+                      </div>
                     </div>
                     <div className="text-sm text-gray-600 space-y-1">
                       <div>ID: {segment.id}</div>

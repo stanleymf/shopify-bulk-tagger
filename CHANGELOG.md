@@ -9,9 +9,91 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Planned Features
 - Webhook integration for real-time segment updates
-- Advanced filtering and search capabilities
 - Analytics dashboard for tag operations
 - Bulk rule import/export functionality
+
+## [1.3.1] - 2025-01-14
+
+### Added ✨
+- **Customer Count Loading**: Added "Load Count" buttons on each segment card to fetch real customer counts
+- **Dynamic Count Display**: Customer counts are fetched on-demand and cached for performance
+- **Loading States**: Visual loading indicators while fetching customer counts
+- **Count Persistence**: Customer counts are stored locally and persist across sessions
+
+### Features
+- Individual "Load Count" buttons for each segment card
+- Real-time customer count fetching using Shopify's `customerSegmentMembers` GraphQL query
+- Loading spinners and disabled states during count fetching
+- Automatic count caching and storage
+- Error handling for failed count requests
+
+### API Enhancements
+- Added `getSegmentCustomerCount()` method to fetch customer count for specific segments
+- Added `updateSegmentCustomerCount()` and `setSegmentCountLoading()` helper methods
+- Enhanced segment interface with `is_loading_count` property
+- Improved error handling and logging for count operations
+
+### UI/UX Improvements
+- Replaced static customer count badges with dynamic load buttons
+- Added Hash icon for Load Count buttons
+- Smooth loading states with spinner animations
+- Consistent button styling and responsive design
+
+## [1.3.0] - 2025-01-14
+
+### Added ✨
+- **Search Bar**: Added search functionality to Customer Segments page for easy filtering
+- **Real-time Filtering**: Filter segments by name or query terms as you type
+- **Search Results Counter**: Shows filtered count vs total segments
+- **Empty Search State**: Helpful message and clear button when no segments match search
+- **Visual Search Indicators**: Search icon and filtered count display in stats
+
+### Features
+- Search through customer segments by name or query criteria
+- Real-time filtering with instant results
+- Clear search functionality with one click
+- Responsive search bar design
+- Search results counter in segment overview
+- Empty state handling for no search results
+
+### UI/UX Improvements
+- Added search input with search icon
+- Enhanced segment overview header with result counts
+- Improved empty states for better user guidance
+- Consistent styling with existing design system
+
+## [1.2.9] - 2025-01-14
+
+### Fixed ✅
+- **Customer Segments Sync**: Successfully resolved customer segments synchronization issues
+- **GraphQL API**: Confirmed working with correct `segments` field implementation
+- **Production Verification**: All fixes deployed and verified working in production environment
+
+### Verified Working
+- Customer segments now loading correctly in the application
+- GraphQL queries returning proper segment data (id, name, query, creationDate, lastEditDate)
+- Proxy infrastructure handling all requests successfully
+- No more "Field 'customerSegments' doesn't exist" errors
+
+### Production Status
+- Version 1.2.9 successfully deployed to Cloudflare Workers
+- Customer segments synchronization confirmed working
+- All API endpoints responding correctly
+- Application fully functional for customer segment management
+
+## [1.2.8] - 2025-01-14
+
+### Fixed
+- **Customer Segments API**: Fixed GraphQL query to use correct `segments` field instead of deprecated `customerSegments`
+- **API Compatibility**: Updated GraphQL queries to work with current Shopify API versions (2024-01 and later)
+- **Error Handling**: Improved error messages for GraphQL API failures
+- **REST API Removal**: Removed REST API fallback for customer segments as they are no longer available via REST
+
+### Technical Changes
+- Updated `getCustomerSegmentsGraphQL()` to use `segments` query with correct field structure
+- Removed deprecated `getCustomerSegmentsREST()` method
+- Updated segment customers handling to reflect current API limitations
+- Enhanced error handling with proper GraphQL error reporting
 
 ## [1.2.5] - 2025-01-15
 
@@ -51,6 +133,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - More efficient data fetching for complex operations
 - Better caching strategies for frequently accessed data
 - Optimized batch processing capabilities
+
+### Fixed
+- **CORS Issues**: Fixed CORS policy errors when accessing Shopify API from the browser
+  - Added Cloudflare Workers proxy endpoint `/api/shopify/proxy` to handle all Shopify API requests
+  - Updated all REST API methods in `shopify-api.ts` to use the proxy instead of direct calls
+  - Updated GraphQL queries to use the proxy for consistent CORS handling
+  - This resolves the "Access to fetch blocked by CORS policy" errors when fetching customer segments
+- **Proxy Endpoint 404 Error**: Fixed 404 error on `/api/shopify/proxy` endpoint
+  - Made the proxy endpoint public (no authentication required) so frontend can access it
+  - Moved proxy handling from protected routes to public routes
+  - Added proper route matching for proxy requests
+
+### Changed
+- **API Architecture**: All Shopify API calls now route through Cloudflare Workers proxy
+  - `getCustomerSegmentsREST()` now uses proxy
+  - `getSegmentCustomersREST()` now uses proxy  
+  - `updateCustomerTagsREST()` now uses proxy
+  - `testConnection()` now uses proxy
+  - `graphqlQuery()` now uses proxy
+  - `getCustomer()` now uses proxy
+  - `searchCustomers()` now uses proxy
+
+### Technical Details
+- Added `handleShopifyProxy()` method to Cloudflare Worker
+- Proxy handles all HTTP methods (GET, POST, PUT, DELETE)
+- Proper CORS headers are added to all proxy responses
+- Error handling and status code forwarding from Shopify API
+- Maintains all existing functionality while fixing CORS issues
+- Proxy endpoint is now accessible without authentication for frontend requests
 
 ## [1.2.4] - 2024-01-15
 

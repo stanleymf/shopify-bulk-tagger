@@ -21,7 +21,7 @@ export default {
 
 		// Check if this is a public route (no auth required)
 		if (this.isPublicRoute(pathname)) {
-			return this.handlePublicRoute(request, pathname);
+			return await this.handlePublicRoute(request, pathname);
 		}
 
 		// Check if this is an authentication route
@@ -34,7 +34,7 @@ export default {
 	},
 
 	// Handle public routes that don't require authentication
-	handlePublicRoute(request: Request, pathname: string): Response {
+	async handlePublicRoute(request: Request, pathname: string): Promise<Response> {
 		switch (pathname) {
 			case '/':
 				return new Response('Welcome to Bulk-Tagger! Please log in to access the dashboard.', {
@@ -68,6 +68,10 @@ export default {
 				});
 
 			default:
+				// Check if this is a Shopify API proxy request
+				if (pathname.startsWith('/api/shopify/proxy')) {
+					return await this.handleShopifyProxy(request);
+				}
 				return new Response('Not Found', { status: 404 });
 		}
 	},
@@ -114,6 +118,91 @@ export default {
 
 		// User is authenticated, serve the application
 		return this.serveApplication(request, pathname, authResult.username);
+	},
+
+	// Handle Shopify API proxy requests
+	async handleShopifyProxy(request: Request): Promise<Response> {
+		try {
+			console.log('Proxy request received:', request.method, request.url);
+			
+			// Handle OPTIONS requests for CORS preflight
+			if (request.method === 'OPTIONS') {
+				return new Response(null, {
+					status: 200,
+					headers: {
+						'Access-Control-Allow-Origin': '*',
+						'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+						'Access-Control-Allow-Headers': 'Content-Type, X-Shopify-Access-Token, Authorization',
+						'Access-Control-Max-Age': '86400',
+					},
+				});
+			}
+
+			// Parse the request body to get the Shopify API details
+			const requestData = await request.json();
+			console.log('Proxy request data:', requestData);
+			
+			const { url, method, headers, body } = requestData;
+
+			// Validate the request
+			if (!url || !method) {
+				console.error('Missing required fields:', { url, method });
+				return new Response(JSON.stringify({ error: 'Missing required fields: url, method' }), {
+					status: 400,
+					headers: {
+						'Content-Type': 'application/json',
+						'Access-Control-Allow-Origin': '*',
+						'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+						'Access-Control-Allow-Headers': 'Content-Type, X-Shopify-Access-Token, Authorization',
+					},
+				});
+			}
+
+			console.log('Making request to Shopify:', { url, method });
+
+			// Make the request to Shopify
+			const shopifyResponse = await fetch(url, {
+				method: method,
+				headers: headers || {},
+				body: body ? JSON.stringify(body) : undefined,
+			});
+
+			console.log('Shopify response status:', shopifyResponse.status);
+
+			// Get the response data
+			const responseData = await shopifyResponse.text();
+			let parsedData;
+			try {
+				parsedData = JSON.parse(responseData);
+			} catch {
+				parsedData = responseData;
+			}
+
+			// Return the response with CORS headers
+			return new Response(JSON.stringify(parsedData), {
+				status: shopifyResponse.status,
+				headers: {
+					'Content-Type': 'application/json',
+					'Access-Control-Allow-Origin': '*',
+					'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+					'Access-Control-Allow-Headers': 'Content-Type, X-Shopify-Access-Token, Authorization',
+				},
+			});
+		} catch (error) {
+			console.error('Shopify proxy error:', error);
+			return new Response(JSON.stringify({ 
+				error: 'Proxy request failed',
+				details: error instanceof Error ? error.message : 'Unknown error'
+			}), {
+				status: 500,
+				headers: {
+					'Content-Type': 'application/json',
+					'Access-Control-Allow-Origin': '*',
+					'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+					'Access-Control-Allow-Headers': 'Content-Type, X-Shopify-Access-Token, Authorization',
+				},
+			});
+		}
 	},
 
 	// Validate basic authentication
@@ -219,6 +308,7 @@ export default {
 			'/status',
 			'/favicon.ico',
 			'/robots.txt',
+			'/api/shopify/proxy',
 		];
 
 		return publicRoutes.some(route => pathname === route || pathname.startsWith('/public/'));
