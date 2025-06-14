@@ -1,13 +1,14 @@
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Users, Settings, BarChart3 } from "lucide-react";
+import { Users, Settings, BarChart3, LogOut } from "lucide-react";
 
 interface SidebarProps {
   activeTab: string;
   onTabChange: (tab: string) => void;
+  onLogout: () => void;
 }
 
-export function Sidebar({ activeTab, onTabChange }: SidebarProps) {
+export function Sidebar({ activeTab, onTabChange, onLogout }: SidebarProps) {
   const navItems = [
     {
       id: 'dashboard',
@@ -53,6 +54,17 @@ export function Sidebar({ activeTab, onTabChange }: SidebarProps) {
           })}
         </div>
       </nav>
+
+      <div className="p-4 border-t border-gray-200">
+        <Button
+          variant="ghost"
+          className="w-full justify-start gap-3 h-11 text-gray-700 hover:bg-gray-100 hover:text-red-600"
+          onClick={onLogout}
+        >
+          <LogOut className="h-5 w-5" />
+          Sign Out
+        </Button>
+      </div>
     </div>
   );
 }

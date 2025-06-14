@@ -3,7 +3,7 @@
   "name": "bulk-tagger",
   "main": "worker/index.ts",
   "compatibility_date": "2024-09-23",
-  "compatibility_flags": ["nodejs_compat", "nodejs_compat_v2"],
+  "compatibility_flags": ["nodejs_compat_v2"],
   "env": {
     "USERNAME": "admin",
     "PASSWORD": "your-secure-password-here",

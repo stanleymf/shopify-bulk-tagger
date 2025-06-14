@@ -13,6 +13,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Analytics dashboard for tag operations
 - Bulk rule import/export functionality
 
+## [1.2.0] - 2024-01-15
+
+### Added
+- Dedicated login page with professional UI design
+- Logout page with confirmation and success states
+- Authentication context for state management across the app
+- Persistent authentication state using localStorage
+- Sign out button in sidebar navigation
+- Improved user experience with loading states and error handling
+
+### Features
+- Clean, modern login form with validation
+- Secure logout process with proper session cleanup
+- Automatic authentication state restoration
+- Responsive design for all screen sizes
+- Professional branding and visual design
+
+### Technical Details
+- React Context API for authentication state management
+- Local storage for persistent login state
+- Proper error handling and user feedback
+- Integration with existing basic authentication system
+- TypeScript interfaces for type safety
+
 ## [1.1.1] - 2024-01-15
 
 ### Fixed

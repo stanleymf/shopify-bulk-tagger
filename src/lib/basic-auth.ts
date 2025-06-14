@@ -32,7 +32,7 @@ class BasicAuthService {
   }
 
   // Validate basic authentication from request headers
-  validateAuth(authorizationHeader: string | null): AuthResult {
+  async validateAuth(authorizationHeader: string | null): Promise<AuthResult> {
     if (!this.config) {
       return {
         isAuthenticated: false,
@@ -75,8 +75,8 @@ class BasicAuthService {
 
       // Use timing-safe comparison to prevent timing attacks
       if (
-        !this.timingSafeEqual(this.config.username, user) ||
-        !this.timingSafeEqual(this.config.password, pass)
+        !(await this.timingSafeEqual(this.config.username, user)) ||
+        !(await this.timingSafeEqual(this.config.password, pass))
       ) {
         return {
           isAuthenticated: false,
@@ -122,18 +122,20 @@ class BasicAuthService {
   }
 
   // Protect against timing attacks by safely comparing values
-  private timingSafeEqual(a: string, b: string): boolean {
+  private async timingSafeEqual(a: string, b: string): Promise<boolean> {
     const aBytes = this.encoder.encode(a);
     const bBytes = this.encoder.encode(b);
-
     if (aBytes.byteLength !== bBytes.byteLength) {
-      // Strings must be the same length in order to compare
-      // with crypto.subtle.timingSafeEqual
       return false;
     }
-
-    // Use a simple comparison for now since timingSafeEqual is not available in all environments
-    // In production, this should be replaced with a proper timing-safe comparison
+    // Use crypto.subtle.timingSafeEqual if available (Cloudflare Workers)
+    // https://developers.cloudflare.com/workers/examples/basic-auth/
+    // @ts-expect-error: timingSafeEqual is only available in Workers runtime
+    if (typeof crypto.subtle.timingSafeEqual === 'function') {
+      // @ts-expect-error
+      return await crypto.subtle.timingSafeEqual(aBytes, bBytes);
+    }
+    // Fallback for local/dev: strict equality (not timing-safe)
     return a === b;
   }
 
