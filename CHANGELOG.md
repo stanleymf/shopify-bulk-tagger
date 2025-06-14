@@ -12,6 +12,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Analytics dashboard for tag operations
 - Bulk rule import/export functionality
 
+## [1.4.1] - 2025-06-14
+
+### Fixed - CRITICAL: Large Segment Pagination
+- **Fixed 250 customer limit**: Bulk tagging now processes ALL customers in large segments
+- **Added GraphQL pagination**: Implemented cursor-based pagination to fetch customers in batches
+- **Automatic page handling**: System automatically fetches multiple pages (250 customers each)
+- **Rate limiting between pages**: Added 500ms delays between API calls to respect Shopify limits
+- **Enhanced logging**: Detailed pagination progress logging for debugging large operations
+
+### Technical Changes
+- Modified `getSegmentCustomerIds()` to use cursor-based pagination
+- Increased default limit from 250 to 10,000 customers per segment
+- Added automatic page size calculation and cursor management
+- Implemented progressive customer ID collection across multiple API calls
+- Enhanced error handling for paginated requests
+
+### Performance Improvements
+- **Large segments now fully supported**: Segments with 5,000+ customers are processed completely
+- **Batch processing**: Efficient handling of large customer lists with proper memory management
+- **Progress tracking**: Real-time logging of pagination progress and customer counts
+- **Fallback safety**: Maintains 50-customer limit for segments without specific queries
+
+### Impact
+- **Before**: Only first 250 customers were processed in large segments
+- **After**: ALL customers in segments are processed (up to 10,000 limit)
+- **Example**: A segment with 5,667 customers will now process all 5,667 customers instead of just 250
+
 ## [1.4.0] - 2025-06-14
 
 ### Added - MAJOR FEATURE: Real-time Segment Monitoring

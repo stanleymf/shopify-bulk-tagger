@@ -859,9 +859,9 @@ class ShopifyAPIService {
 
   /**
    * Get customer IDs from a segment (without full customer data)
-   * Uses GraphQL customer search with segment criteria
+   * Uses GraphQL customer search with segment criteria and pagination
    */
-  async getSegmentCustomerIds(segmentId: number, limit: number = 250): Promise<string[]> {
+  async getSegmentCustomerIds(segmentId: number, limit: number = 10000): Promise<string[]> {
     if (!this.isInitialized()) {
       throw new Error('Shopify API service not initialized');
     }
@@ -878,24 +878,6 @@ class ShopifyAPIService {
 
     console.log(`Found segment: ${segment.name}, query: ${segment.query}`);
 
-    // Use customer search with segment criteria
-    const query = `
-      query($query: String!, $first: Int!) {
-        customers(query: $query, first: $first) {
-          edges {
-            node {
-              id
-              email
-            }
-          }
-          pageInfo {
-            hasNextPage
-            endCursor
-          }
-        }
-      }
-    `;
-
     // Translate segment query to customer search query
     let searchQuery = '';
     
@@ -907,50 +889,98 @@ class ShopifyAPIService {
       searchQuery = 'state:enabled'; // Get all enabled customers
     }
 
-    const variables = {
-      query: searchQuery,
-      first: Math.min(limit, 250) // Shopify limits to 250
-    };
+    // Use pagination to fetch all customers
+    const allCustomerIds: string[] = [];
+    let hasNextPage = true;
+    let cursor: string | null = null;
+    let pageCount = 0;
+    const maxPages = Math.ceil(limit / 250); // Shopify's max per page is 250
 
-    console.log('Customer search query variables:', variables);
+    console.log(`Starting paginated fetch for segment "${segment.name}" with search query: "${searchQuery}"`);
 
-    const response = await this.graphqlQuery<{
-      customers: {
-        edges: Array<{ node: { id: string; email: string } }>;
-        pageInfo: { hasNextPage: boolean; endCursor?: string };
+    while (hasNextPage && pageCount < maxPages && allCustomerIds.length < limit) {
+      pageCount++;
+      const pageSize = Math.min(250, limit - allCustomerIds.length);
+      
+      console.log(`Fetching page ${pageCount}, size: ${pageSize}, cursor: ${cursor || 'null'}`);
+
+      // Use customer search with segment criteria
+      const query = `
+        query($query: String!, $first: Int!, $after: String) {
+          customers(query: $query, first: $first, after: $after) {
+            edges {
+              node {
+                id
+                email
+              }
+              cursor
+            }
+            pageInfo {
+              hasNextPage
+              endCursor
+            }
+          }
+        }
+      `;
+
+      const variables: any = {
+        query: searchQuery,
+        first: pageSize
       };
-    }>(query, variables);
 
-    console.log('Customer search response:', JSON.stringify(response, null, 2));
+      if (cursor) {
+        variables.after = cursor;
+      }
 
-    if (response.errors) {
-      console.error('GraphQL errors:', response.errors);
-      throw new Error(`Failed to search customers: ${response.errors.map(e => e.message).join(', ')}`);
+      console.log(`Page ${pageCount} query variables:`, variables);
+
+      const response = await this.graphqlQuery<{
+        customers: {
+          edges: Array<{ node: { id: string; email: string }; cursor: string }>;
+          pageInfo: { hasNextPage: boolean; endCursor?: string };
+        };
+      }>(query, variables);
+
+      if (response.errors) {
+        console.error('GraphQL errors:', response.errors);
+        throw new Error(`Failed to search customers: ${response.errors.map(e => e.message).join(', ')}`);
+      }
+
+      if (!response.data?.customers) {
+        console.error('No customers data received');
+        throw new Error('No customers data received from search');
+      }
+
+      const { edges, pageInfo } = response.data.customers;
+      console.log(`Page ${pageCount} returned ${edges.length} customers, hasNextPage: ${pageInfo.hasNextPage}`);
+
+      // Add customer IDs from this page
+      const pageCustomerIds = edges.map(edge => edge.node.id);
+      allCustomerIds.push(...pageCustomerIds);
+
+      // Update pagination info
+      hasNextPage = pageInfo.hasNextPage && allCustomerIds.length < limit;
+      cursor = pageInfo.endCursor || null;
+
+      console.log(`Total customers fetched so far: ${allCustomerIds.length}`);
+
+      // Add delay between pages to respect rate limits
+      if (hasNextPage) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
     }
 
-    if (!response.data?.customers) {
-      console.error('No customers data received');
-      throw new Error('No customers data received from search');
+    // Handle special case for segments without specific queries
+    if (!segment.query && allCustomerIds.length > 0) {
+      console.warn(`Segment "${segment.name}" doesn't have a specific query. Limiting to first 50 customers for safety.`);
+      const limitedIds = allCustomerIds.slice(0, 50);
+      console.log(`Returning limited customer IDs: ${limitedIds.length} customers`);
+      return limitedIds;
     }
 
-    const { edges } = response.data.customers;
-    console.log(`Customer search returned ${edges.length} customers`);
-
-    // If we got customers but used a generic query, we need to filter by segment
-    // This is a limitation - we'll return what we found and let the user know
-    if (!segment.query && edges.length > 0) {
-      console.warn(`Segment "${segment.name}" doesn't have a specific query. Returning first ${Math.min(edges.length, 10)} customers as a sample.`);
-      // Limit to first 10 for safety when no specific query
-      const limitedEdges = edges.slice(0, 10);
-      const customerIds = limitedEdges.map(edge => edge.node.id);
-      console.log(`Returning limited customer IDs:`, customerIds);
-      return customerIds;
-    }
-
-    const customerIds = edges.map(edge => edge.node.id);
-    console.log(`Successfully fetched ${customerIds.length} customer IDs:`, customerIds);
+    console.log(`Successfully fetched ${allCustomerIds.length} customer IDs from ${pageCount} pages for segment "${segment.name}"`);
     
-    return customerIds;
+    return allCustomerIds;
   }
 
   /**
