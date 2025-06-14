@@ -13,6 +13,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Analytics dashboard for tag operations
 - Bulk rule import/export functionality
 
+## [1.2.4] - 2024-01-15
+
+### Fixed
+- **Critical data persistence issue** in Cloudflare Workers environment
+- Configuration disappearing after page refresh
+- localStorage availability and reliability problems
+
+### Added
+- Robust storage system with dual fallback mechanisms
+- sessionStorage fallback when localStorage fails
+- Comprehensive storage availability testing
+- Debug storage button in Settings for troubleshooting
+- Enhanced error handling and recovery mechanisms
+- Detailed console logging for storage operations
+
+### Changed
+- Improved storage reliability for Cloudflare Workers deployment
+- Enhanced configuration persistence across browser sessions
+- Better error messages for storage failures
+- More robust initialization of Shopify API service
+
+### Technical Details
+- Dual storage approach: localStorage + sessionStorage fallback
+- Storage availability testing on app initialization
+- Comprehensive debugging tools for troubleshooting
+- Enhanced error handling with graceful degradation
+- Improved logging throughout config context and storage system
+
+### Features
+- Configuration now persists reliably after page refresh
+- Debug tools to identify storage issues
+- Fallback mechanisms ensure data persistence
+- Better user experience with persistent settings
+
 ## [1.2.3] - 2024-01-15
 
 ### Added
