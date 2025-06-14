@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { AuthProvider, useAuth } from "@/lib/auth-context";
+import { ConfigProvider } from "@/lib/config-context";
 import { LoginPage } from "@/components/LoginPage";
 import { LogoutPage } from "@/components/LogoutPage";
 import { Sidebar } from "@/components/Sidebar";
@@ -64,7 +65,9 @@ function AppContent() {
 function App() {
   return (
     <AuthProvider>
-      <AppContent />
+      <ConfigProvider>
+        <AppContent />
+      </ConfigProvider>
     </AuthProvider>
   );
 }

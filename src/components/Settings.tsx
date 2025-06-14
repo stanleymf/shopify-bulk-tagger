@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,31 +17,37 @@ import {
   RefreshCw,
   ExternalLink,
   Eye,
-  EyeOff
+  EyeOff,
+  Trash2
 } from "lucide-react";
-
-interface ShopifyConfig {
-  shopDomain: string;
-  apiKey: string;
-  apiSecret: string;
-  accessToken: string;
-  isConnected: boolean;
-  lastSync?: string;
-}
+import { useConfig } from "@/lib/config-context";
+import { shopifyAPI } from "@/lib/shopify-api";
 
 export function Settings() {
-  const [config, setConfig] = useState<ShopifyConfig>({
+  const { shopifyConfig, isConnected, updateConfig, clearConfig } = useConfig();
+  const [config, setConfig] = useState({
     shopDomain: '',
     apiKey: '',
     apiSecret: '',
     accessToken: '',
-    isConnected: false,
   });
   
   const [isLoading, setIsLoading] = useState(false);
   const [showSecrets, setShowSecrets] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+
+  // Load configuration from context on component mount
+  useEffect(() => {
+    if (shopifyConfig) {
+      setConfig({
+        shopDomain: shopifyConfig.shopDomain || '',
+        apiKey: shopifyConfig.apiKey || '',
+        apiSecret: shopifyConfig.apiSecret || '',
+        accessToken: shopifyConfig.accessToken || '',
+      });
+    }
+  }, [shopifyConfig]);
 
   const handleSaveConfig = async () => {
     setIsLoading(true);
@@ -50,23 +56,36 @@ export function Settings() {
 
     try {
       // Validate required fields
-      if (!config.shopDomain || !config.apiKey || !config.apiSecret) {
+      if (!config.shopDomain || !config.apiKey || !config.apiSecret || !config.accessToken) {
         throw new Error('Please fill in all required fields');
       }
 
-      // Simulate API call to test connection
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Clean shop domain (remove protocol if present)
+      const cleanDomain = config.shopDomain.replace(/^https?:\/\//, '').replace(/\/$/, '');
       
-      // Update config with connection status
-      setConfig(prev => ({
-        ...prev,
+      // Initialize Shopify API with the configuration
+      shopifyAPI.initialize(cleanDomain, config.accessToken);
+      
+      // Test the connection
+      const isConnected = await shopifyAPI.testConnection();
+      
+      if (!isConnected) {
+        throw new Error('Failed to connect to Shopify store');
+      }
+
+      // Save configuration to context
+      updateConfig({
+        shopDomain: cleanDomain,
+        apiKey: config.apiKey,
+        apiSecret: config.apiSecret,
+        accessToken: config.accessToken,
         isConnected: true,
-        lastSync: new Date().toISOString()
-      }));
+      });
       
-      setSuccess('Shopify store connected successfully!');
+      setSuccess('Shopify store connected successfully! You can now sync customer segments.');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to connect to Shopify');
+      const errorMessage = err instanceof Error ? err.message : 'Failed to connect to Shopify';
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -78,11 +97,27 @@ export function Settings() {
     setSuccess(null);
 
     try {
-      // Simulate connection test
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      setSuccess('Connection test successful! Your credentials are valid.');
+      if (!config.shopDomain || !config.accessToken) {
+        throw new Error('Please enter your shop domain and access token first');
+      }
+
+      // Clean shop domain
+      const cleanDomain = config.shopDomain.replace(/^https?:\/\//, '').replace(/\/$/, '');
+      
+      // Initialize API temporarily for testing
+      shopifyAPI.initialize(cleanDomain, config.accessToken);
+      
+      // Test connection
+      const isConnected = await shopifyAPI.testConnection();
+      
+      if (isConnected) {
+        setSuccess('Connection test successful! Your credentials are valid.');
+      } else {
+        throw new Error('Connection test failed');
+      }
     } catch (err) {
-      setError('Connection test failed. Please check your credentials.');
+      const errorMessage = err instanceof Error ? err.message : 'Connection test failed';
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -94,17 +129,42 @@ export function Settings() {
     setSuccess(null);
 
     try {
-      // Simulate segment sync
-      await new Promise(resolve => setTimeout(resolve, 3000));
-      setConfig(prev => ({
-        ...prev,
-        lastSync: new Date().toISOString()
-      }));
-      setSuccess('Customer segments synced successfully!');
+      if (!shopifyAPI.isInitialized()) {
+        throw new Error('Please connect your Shopify store first');
+      }
+
+      // Fetch customer segments from Shopify
+      const segments = await shopifyAPI.getCustomerSegments();
+      
+      // Update config with sync timestamp
+      updateConfig({
+        lastSync: new Date().toISOString(),
+      });
+      
+      setSuccess(`Successfully synced ${segments.length} customer segments!`);
     } catch (err) {
-      setError('Failed to sync segments. Please try again.');
+      const errorMessage = err instanceof Error ? err.message : 'Failed to sync segments';
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleDisconnect = () => {
+    try {
+      clearConfig();
+      
+      // Reset component state
+      setConfig({
+        shopDomain: '',
+        apiKey: '',
+        apiSecret: '',
+        accessToken: '',
+      });
+      
+      setSuccess('Store disconnected successfully');
+    } catch (error) {
+      setError('Failed to disconnect store');
     }
   };
 
@@ -145,15 +205,22 @@ export function Settings() {
           <CardContent className="space-y-4">
             <div className="flex items-center justify-between">
               <span className="text-sm text-gray-600">Status</span>
-              <Badge variant={config.isConnected ? "default" : "secondary"}>
-                {config.isConnected ? "Connected" : "Disconnected"}
+              <Badge variant={isConnected ? "default" : "secondary"}>
+                {isConnected ? "Connected" : "Disconnected"}
               </Badge>
             </div>
             
-            {config.lastSync && (
+            {shopifyConfig?.lastSync && (
               <div className="flex items-center justify-between">
                 <span className="text-sm text-gray-600">Last Sync</span>
-                <span className="text-sm text-gray-900">{formatDate(config.lastSync)}</span>
+                <span className="text-sm text-gray-900">{formatDate(shopifyConfig.lastSync)}</span>
+              </div>
+            )}
+
+            {shopifyConfig?.updatedAt && (
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-600">Last Updated</span>
+                <span className="text-sm text-gray-900">{formatDate(shopifyConfig.updatedAt)}</span>
               </div>
             )}
 
@@ -162,7 +229,7 @@ export function Settings() {
                 onClick={handleTestConnection} 
                 variant="outline" 
                 size="sm" 
-                disabled={isLoading || !config.shopDomain}
+                disabled={isLoading || !config.shopDomain || !config.accessToken}
                 className="w-full"
               >
                 {isLoading ? (
@@ -177,7 +244,7 @@ export function Settings() {
                 onClick={handleSyncSegments} 
                 variant="outline" 
                 size="sm" 
-                disabled={isLoading || !config.isConnected}
+                disabled={isLoading || !isConnected}
                 className="w-full"
               >
                 {isLoading ? (
@@ -187,6 +254,19 @@ export function Settings() {
                 )}
                 Sync Segments
               </Button>
+
+              {isConnected && (
+                <Button 
+                  onClick={handleDisconnect} 
+                  variant="outline" 
+                  size="sm" 
+                  disabled={isLoading}
+                  className="w-full text-red-600 hover:text-red-700 hover:bg-red-50"
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Disconnect Store
+                </Button>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -248,15 +328,18 @@ export function Settings() {
 
               <div className="space-y-2">
                 <Label htmlFor="access-token" className="text-sm font-medium text-gray-700">
-                  Access Token
+                  Access Token *
                 </Label>
                 <Input
                   id="access-token"
                   type={showSecrets ? "text" : "password"}
                   value={config.accessToken}
                   onChange={(e) => setConfig(prev => ({ ...prev, accessToken: e.target.value }))}
-                  placeholder="Enter your Shopify access token (optional)"
+                  placeholder="Enter your Shopify access token"
                 />
+                <p className="text-xs text-gray-500">
+                  This is required for API access. You can generate this in your Shopify admin under Apps &gt; Private apps.
+                </p>
               </div>
 
               <div className="flex items-center space-x-2">
@@ -288,7 +371,7 @@ export function Settings() {
 
               <Button 
                 onClick={handleSaveConfig} 
-                disabled={isLoading || !config.shopDomain || !config.apiKey || !config.apiSecret}
+                disabled={isLoading || !config.shopDomain || !config.apiKey || !config.apiSecret || !config.accessToken}
                 className="w-full"
               >
                 {isLoading ? (
@@ -296,7 +379,7 @@ export function Settings() {
                 ) : (
                   <Key className="h-4 w-4 mr-2" />
                 )}
-                {config.isConnected ? 'Update Configuration' : 'Connect Store'}
+                {isConnected ? 'Update Configuration' : 'Connect Store'}
               </Button>
             </CardContent>
           </Card>

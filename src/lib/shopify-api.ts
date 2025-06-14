@@ -1,6 +1,8 @@
 // Shopify API Service Layer
 // Handles all interactions with Shopify APIs for customer segments and tagging
 
+import { storage, ShopifyConfig } from './storage';
+
 export interface ShopifyCustomerSegment {
   id: number;
   name: string;
@@ -40,31 +42,85 @@ export interface CustomerUpdateRequest {
   };
 }
 
+export interface ShopifyAPIError {
+  message: string;
+  status?: number;
+  code?: string;
+  details?: any;
+}
+
 class ShopifyAPIService {
-  private baseURL: string;
+  private baseURL: string = '';
   private accessToken: string | null = null;
   private shopDomain: string | null = null;
+  private isInitializedFlag: boolean = false;
 
   constructor() {
-    this.baseURL = '';
+    // Try to initialize from stored configuration
+    this.initializeFromStorage();
+  }
+
+  // Initialize from stored configuration
+  private initializeFromStorage(): void {
+    try {
+      const config = storage.getShopifyConfig();
+      if (config && config.isConnected && config.shopDomain && config.accessToken) {
+        this.initialize(config.shopDomain, config.accessToken);
+      }
+    } catch (error) {
+      console.error('Failed to initialize from storage:', error);
+    }
   }
 
   // Initialize the API service with shop domain and access token
-  initialize(shopDomain: string, accessToken: string) {
+  initialize(shopDomain: string, accessToken: string): void {
     this.shopDomain = shopDomain;
     this.accessToken = accessToken;
     this.baseURL = `https://${shopDomain}/admin/api/2024-01`;
+    this.isInitializedFlag = true;
   }
 
   // Check if the service is properly initialized
   isInitialized(): boolean {
-    return !!(this.shopDomain && this.accessToken);
+    return this.isInitializedFlag && !!(this.shopDomain && this.accessToken);
+  }
+
+  // Test connection to Shopify API
+  async testConnection(): Promise<boolean> {
+    if (!this.isInitialized()) {
+      throw new Error('Shopify API service not initialized');
+    }
+
+    try {
+      const response = await fetch(`${this.baseURL}/shop.json`, {
+        headers: {
+          'X-Shopify-Access-Token': this.accessToken!,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          throw new Error('Invalid access token. Please check your credentials.');
+        } else if (response.status === 403) {
+          throw new Error('Access denied. Please check your API permissions.');
+        } else {
+          throw new Error(`API request failed with status: ${response.status}`);
+        }
+      }
+
+      const data = await response.json();
+      return !!data.shop;
+    } catch (error) {
+      console.error('Connection test failed:', error);
+      throw error;
+    }
   }
 
   // Get all customer segments from Shopify
   async getCustomerSegments(): Promise<ShopifyCustomerSegment[]> {
     if (!this.isInitialized()) {
-      throw new Error('Shopify API service not initialized');
+      throw new Error('Shopify API service not initialized. Please connect your store first.');
     }
 
     try {
@@ -76,10 +132,21 @@ class ShopifyAPIService {
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        if (response.status === 401) {
+          throw new Error('Invalid access token. Please reconnect your store.');
+        } else if (response.status === 403) {
+          throw new Error('Access denied. Please check your API permissions for customer segments.');
+        } else {
+          throw new Error(`Failed to fetch customer segments: ${response.status}`);
+        }
       }
 
       const data: CustomerSegmentResponse = await response.json();
+      
+      // Store segments in local storage
+      storage.saveSegments(data.customer_segments);
+      storage.updateLastSync();
+      
       return data.customer_segments;
     } catch (error) {
       console.error('Error fetching customer segments:', error);
@@ -90,7 +157,7 @@ class ShopifyAPIService {
   // Get customers within a specific segment
   async getSegmentCustomers(segmentId: number): Promise<ShopifyCustomer[]> {
     if (!this.isInitialized()) {
-      throw new Error('Shopify API service not initialized');
+      throw new Error('Shopify API service not initialized. Please connect your store first.');
     }
 
     try {
@@ -105,7 +172,13 @@ class ShopifyAPIService {
       );
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        if (response.status === 401) {
+          throw new Error('Invalid access token. Please reconnect your store.');
+        } else if (response.status === 404) {
+          throw new Error(`Customer segment ${segmentId} not found.`);
+        } else {
+          throw new Error(`Failed to fetch segment customers: ${response.status}`);
+        }
       }
 
       const data: CustomerResponse = await response.json();
@@ -119,7 +192,7 @@ class ShopifyAPIService {
   // Update customer tags
   async updateCustomerTags(customerId: number, tags: string): Promise<ShopifyCustomer> {
     if (!this.isInitialized()) {
-      throw new Error('Shopify API service not initialized');
+      throw new Error('Shopify API service not initialized. Please connect your store first.');
     }
 
     try {
@@ -140,7 +213,15 @@ class ShopifyAPIService {
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        if (response.status === 401) {
+          throw new Error('Invalid access token. Please reconnect your store.');
+        } else if (response.status === 404) {
+          throw new Error(`Customer ${customerId} not found.`);
+        } else if (response.status === 422) {
+          throw new Error('Invalid tag format. Please check your tag syntax.');
+        } else {
+          throw new Error(`Failed to update customer tags: ${response.status}`);
+        }
       }
 
       const data: { customer: ShopifyCustomer } = await response.json();
@@ -155,8 +236,13 @@ class ShopifyAPIService {
   async batchUpdateCustomerTags(
     customerUpdates: Array<{ id: number; tags: string }>
   ): Promise<ShopifyCustomer[]> {
+    if (!this.isInitialized()) {
+      throw new Error('Shopify API service not initialized. Please connect your store first.');
+    }
+
     const results: ShopifyCustomer[] = [];
     const batchSize = 10; // Process in batches to respect rate limits
+    const errors: string[] = [];
 
     for (let i = 0; i < customerUpdates.length; i += batchSize) {
       const batch = customerUpdates.slice(i, i + batchSize);
@@ -165,20 +251,32 @@ class ShopifyAPIService {
       const batchPromises = batch.map(async (update) => {
         try {
           const result = await this.updateCustomerTags(update.id, update.tags);
-          return result;
+          return { success: true, data: result };
         } catch (error) {
-          console.error(`Failed to update customer ${update.id}:`, error);
-          throw error;
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          errors.push(`Customer ${update.id}: ${errorMessage}`);
+          return { success: false, error: errorMessage };
         }
       });
 
       const batchResults = await Promise.all(batchPromises);
-      results.push(...batchResults);
+      
+      // Collect successful results
+      batchResults.forEach(result => {
+        if (result.success && result.data) {
+          results.push(result.data);
+        }
+      });
 
       // Add delay between batches to respect rate limits
       if (i + batchSize < customerUpdates.length) {
         await new Promise(resolve => setTimeout(resolve, 500)); // 500ms delay
       }
+    }
+
+    // If there were errors, throw them
+    if (errors.length > 0) {
+      throw new Error(`Batch update completed with errors: ${errors.join('; ')}`);
     }
 
     return results;
@@ -187,7 +285,7 @@ class ShopifyAPIService {
   // Get customer by ID
   async getCustomer(customerId: number): Promise<ShopifyCustomer> {
     if (!this.isInitialized()) {
-      throw new Error('Shopify API service not initialized');
+      throw new Error('Shopify API service not initialized. Please connect your store first.');
     }
 
     try {
@@ -199,7 +297,13 @@ class ShopifyAPIService {
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        if (response.status === 401) {
+          throw new Error('Invalid access token. Please reconnect your store.');
+        } else if (response.status === 404) {
+          throw new Error(`Customer ${customerId} not found.`);
+        } else {
+          throw new Error(`Failed to fetch customer: ${response.status}`);
+        }
       }
 
       const data: { customer: ShopifyCustomer } = await response.json();
@@ -213,7 +317,7 @@ class ShopifyAPIService {
   // Search customers with specific criteria
   async searchCustomers(query: string): Promise<ShopifyCustomer[]> {
     if (!this.isInitialized()) {
-      throw new Error('Shopify API service not initialized');
+      throw new Error('Shopify API service not initialized. Please connect your store first.');
     }
 
     try {
@@ -228,7 +332,11 @@ class ShopifyAPIService {
       );
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        if (response.status === 401) {
+          throw new Error('Invalid access token. Please reconnect your store.');
+        } else {
+          throw new Error(`Failed to search customers: ${response.status}`);
+        }
       }
 
       const data: CustomerResponse = await response.json();
@@ -239,25 +347,38 @@ class ShopifyAPIService {
     }
   }
 
-  // Helper method to parse tags string into array
+  // Get stored segments from local storage
+  getStoredSegments(): ShopifyCustomerSegment[] {
+    return storage.getSegments();
+  }
+
+  // Get last sync timestamp
+  getLastSync(): string | null {
+    return storage.getLastSync();
+  }
+
+  // Clear stored data
+  clearStoredData(): void {
+    storage.saveSegments([]);
+    storage.saveAppData({ lastSync: null });
+  }
+
+  // Utility methods for tag manipulation
   static parseTags(tagsString: string): string[] {
     if (!tagsString) return [];
     return tagsString.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0);
   }
 
-  // Helper method to format tags array into string
   static formatTags(tags: string[]): string {
-    return tags.filter(tag => tag.length > 0).join(', ');
+    return tags.join(', ');
   }
 
-  // Helper method to add tags to existing tags
   static addTags(existingTags: string, newTags: string[]): string {
     const existing = this.parseTags(existingTags);
-    const combined = [...new Set([...existing, ...newTags])];
-    return this.formatTags(combined);
+    const unique = [...new Set([...existing, ...newTags])];
+    return this.formatTags(unique);
   }
 
-  // Helper method to remove tags from existing tags
   static removeTags(existingTags: string, tagsToRemove: string[]): string {
     const existing = this.parseTags(existingTags);
     const filtered = existing.filter(tag => !tagsToRemove.includes(tag));
