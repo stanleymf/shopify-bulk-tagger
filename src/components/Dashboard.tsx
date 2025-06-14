@@ -49,6 +49,44 @@ export function Dashboard() {
   // Load segments on component mount
   useEffect(() => {
     loadSegments();
+    
+    // Load background jobs
+    const currentActiveJob = backgroundJobsService.getActiveJob();
+    const allJobs = backgroundJobsService.getAllJobs();
+    
+    setActiveJob(currentActiveJob);
+    setJobHistory(allJobs);
+    
+    // Subscribe to active job updates if there is one
+    if (currentActiveJob) {
+      backgroundJobsService.subscribeToJob(currentActiveJob.id, (job) => {
+        setActiveJob(job);
+        setJobHistory(backgroundJobsService.getAllJobs());
+        
+        // Update the bulk tagging state for UI compatibility
+        setBulkTaggingState(prev => ({
+          ...prev,
+          isActive: job.status === 'running',
+          progress: job.progress
+        }));
+      });
+      
+      // Check if the job needs to be resumed (was interrupted by page reload)
+      if (backgroundJobsService.needsResumption(currentActiveJob.id)) {
+        setSuccess(`Resuming background job: ${currentActiveJob.type === 'bulk_add_tags' ? 'Adding' : 'Removing'} tags for "${currentActiveJob.segmentName}"`);
+        
+        // Resume the job automatically
+        backgroundJobsService.resumeJob(currentActiveJob.id, shopifyAPI)
+          .then(() => {
+            console.log('Job resumed successfully');
+            setSuccess(`Background job resumed successfully!`);
+          })
+          .catch((error) => {
+            console.error('Failed to resume job:', error);
+            setError(`Failed to resume background job: ${error.message}`);
+          });
+      }
+    }
   }, []);
 
   // Filter segments based on search term
@@ -174,13 +212,22 @@ export function Dashboard() {
   };
 
   const handleCancelBulkTagging = () => {
+    // Cancel any active background job
+    if (activeJob) {
+      backgroundJobsService.cancelJob(activeJob.id);
+      setActiveJob(null);
+      setJobHistory(backgroundJobsService.getAllJobs());
+    }
+    
     setBulkTaggingState({
       isActive: false,
       segmentId: null,
       operation: null,
       progress: { current: 0, total: 0, skipped: 0, message: '' }
     });
-    setBulkTagsInput("");
+    setBulkTagsInput('');
+    setError(null);
+    setSuccess(null);
   };
 
   const handleExecuteBulkTagging = async () => {
@@ -205,6 +252,52 @@ export function Dashboard() {
       return;
     }
 
+    // Get segment info
+    const segment = segments.find(s => s.id === bulkTaggingState.segmentId);
+    if (!segment) {
+      setError('Segment not found');
+      return;
+    }
+
+    // Start background job
+    const jobId = backgroundJobsService.startJob(
+      bulkTaggingState.operation === 'add' ? 'bulk_add_tags' : 'bulk_remove_tags',
+      bulkTaggingState.segmentId,
+      segment.name,
+      tags
+    );
+
+    // Update local state
+    const newJob = backgroundJobsService.getJob(jobId);
+    if (newJob) {
+      setActiveJob(newJob);
+      setJobHistory(backgroundJobsService.getAllJobs());
+    }
+
+    // Subscribe to job updates
+    backgroundJobsService.subscribeToJob(jobId, (job) => {
+      setActiveJob(job);
+      setJobHistory(backgroundJobsService.getAllJobs());
+      
+      // Update the old bulk tagging state for UI compatibility
+      setBulkTaggingState(prev => ({
+        ...prev,
+        isActive: job.status === 'running',
+        progress: job.progress
+      }));
+      
+      // Show completion message
+      if (job.status === 'completed' && job.result) {
+        const action = job.type === 'bulk_add_tags' ? 'added to' : 'removed from';
+        setSuccess(
+          `Successfully ${action} ${job.result.processedCount} customers in "${job.segmentName}" with tags: ${job.tags.join(', ')}${job.result.skippedCount > 0 ? ` (Skipped: ${job.result.skippedCount})` : ''}`
+        );
+        handleCancelBulkTagging();
+      } else if (job.status === 'failed' && job.result) {
+        setError(`Bulk tagging failed: ${job.result.errors.join(', ')}`);
+      }
+    });
+
     setBulkTaggingState(prev => ({
       ...prev,
       isActive: true,
@@ -221,10 +314,8 @@ export function Dashboard() {
           bulkTaggingState.segmentId, 
           tags,
           (current: number, total: number, skipped: number, message: string) => {
-            setBulkTaggingState(prev => ({
-              ...prev,
-              progress: { current, total, skipped, message }
-            }));
+            // Update background job progress
+            backgroundJobsService.updateJobProgress(jobId, current, total, skipped, message);
           }
         );
       } else {
@@ -232,16 +323,16 @@ export function Dashboard() {
           bulkTaggingState.segmentId, 
           tags,
           (current: number, total: number, skipped: number, message: string) => {
-            setBulkTaggingState(prev => ({
-              ...prev,
-              progress: { current, total, skipped, message }
-            }));
+            // Update background job progress
+            backgroundJobsService.updateJobProgress(jobId, current, total, skipped, message);
           }
         );
       }
 
+      // Complete the background job
+      backgroundJobsService.completeJob(jobId, result);
+
       if (result.success) {
-        const segment = segments.find(s => s.id === bulkTaggingState.segmentId);
         const segmentName = segment?.name || 'Unknown Segment';
         const action = bulkTaggingState.operation === 'add' ? 'added to' : 'removed from';
         
@@ -272,12 +363,24 @@ export function Dashboard() {
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to process bulk tagging';
+      
+      // Complete the background job with error
+      backgroundJobsService.completeJob(jobId, {
+        success: false,
+        processedCount: 0,
+        skippedCount: 0,
+        errors: [errorMessage]
+      });
+      
       setError(errorMessage);
     } finally {
       setBulkTaggingState(prev => ({
         ...prev,
         isActive: false
       }));
+      
+      // Unsubscribe from job updates
+      backgroundJobsService.unsubscribeFromJob(jobId);
     }
   };
 
@@ -336,6 +439,140 @@ export function Dashboard() {
           <CheckCircle className="h-4 w-4" />
           <AlertDescription>{success}</AlertDescription>
         </Alert>
+      )}
+
+      {/* Background Jobs Status */}
+      {(activeJob || jobHistory.length > 0) && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg font-medium text-gray-900 flex items-center gap-2">
+              <div className="h-2 w-2 bg-blue-500 rounded-full animate-pulse"></div>
+              Background Jobs
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {activeJob && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <div className="h-2 w-2 bg-green-500 rounded-full animate-pulse"></div>
+                    <span className="font-medium text-blue-900">
+                      {activeJob.type === 'bulk_add_tags' ? 'Adding Tags' : 'Removing Tags'}
+                    </span>
+                    <span className="text-sm text-blue-700">
+                      to "{activeJob.segmentName}"
+                    </span>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      backgroundJobsService.cancelJob(activeJob.id);
+                      setActiveJob(null);
+                      setJobHistory(backgroundJobsService.getAllJobs());
+                    }}
+                    className="h-6 w-6 p-0 text-red-600 hover:text-red-800"
+                  >
+                    ×
+                  </Button>
+                </div>
+                
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-medium text-blue-900">
+                    Progress: {activeJob.progress.current}/{activeJob.progress.total}
+                    {activeJob.progress.skipped > 0 && (
+                      <span className="text-orange-600 ml-2">
+                        (Skipped: {activeJob.progress.skipped})
+                      </span>
+                    )}
+                  </span>
+                  <span className="text-sm text-blue-700">
+                    {activeJob.progress.total > 0 ? Math.round((activeJob.progress.current / activeJob.progress.total) * 100) : 0}%
+                  </span>
+                </div>
+                
+                <div className="w-full bg-blue-200 rounded-full h-2 mb-2">
+                  <div 
+                    className="bg-gradient-to-r from-blue-500 to-blue-600 h-2 rounded-full transition-all duration-300 ease-out"
+                    style={{ 
+                      width: activeJob.progress.total > 0 ? `${(activeJob.progress.current / activeJob.progress.total) * 100}%` : '0%' 
+                    }}
+                  />
+                </div>
+                
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-blue-800">{activeJob.progress.message}</p>
+                  <span className="text-xs text-blue-600">
+                    Running for {backgroundJobsService.getJobDuration(activeJob)}
+                  </span>
+                </div>
+                
+                <div className="mt-2 text-xs text-blue-600">
+                  Tags: {activeJob.tags.join(', ')}
+                </div>
+              </div>
+            )}
+            
+            {jobHistory.length > 0 && (
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-sm font-medium text-gray-700">Recent Jobs</h4>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      backgroundJobsService.clearCompletedJobs();
+                      setJobHistory(backgroundJobsService.getAllJobs());
+                    }}
+                    className="text-xs text-gray-500 hover:text-gray-700"
+                  >
+                    Clear History
+                  </Button>
+                </div>
+                
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {jobHistory.slice(0, 5).map((job) => (
+                    <div key={job.id} className="bg-gray-50 rounded-md p-3 text-sm">
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center gap-2">
+                          <div className={`h-2 w-2 rounded-full ${
+                            job.status === 'completed' ? 'bg-green-500' :
+                            job.status === 'failed' ? 'bg-red-500' :
+                            job.status === 'paused' ? 'bg-yellow-500' :
+                            'bg-blue-500'
+                          }`}></div>
+                          <span className="font-medium">
+                            {job.type === 'bulk_add_tags' ? 'Added' : 'Removed'} tags
+                          </span>
+                          <span className="text-gray-600">
+                            {job.status === 'running' ? 'Running' : 
+                             job.status === 'completed' ? 'Completed' :
+                             job.status === 'failed' ? 'Failed' : 'Paused'}
+                          </span>
+                        </div>
+                        <span className="text-xs text-gray-500">
+                          {backgroundJobsService.getJobDuration(job)}
+                        </span>
+                      </div>
+                      
+                      <div className="text-xs text-gray-600 mb-1">
+                        Segment: {job.segmentName} | Tags: {job.tags.join(', ')}
+                      </div>
+                      
+                      {job.result && (
+                        <div className="text-xs text-gray-600">
+                          Processed: {job.result.processedCount}
+                          {job.result.skippedCount > 0 && ` | Skipped: ${job.result.skippedCount}`}
+                          {job.result.errors.length > 0 && ` | Errors: ${job.result.errors.length}`}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

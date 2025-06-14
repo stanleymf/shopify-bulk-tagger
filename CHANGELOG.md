@@ -12,6 +12,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Analytics dashboard for tag operations
 - Bulk rule import/export functionality
 
+## [1.7.0] - 2024-12-19
+
+### Added
+- **Complete Background Jobs System**: Full implementation of persistent background job management
+  - Jobs now persist across browser sessions and page refreshes
+  - Automatic job resumption when returning to the application
+  - Real-time job progress tracking with skip counts
+  - Background jobs UI with live progress bars and status indicators
+  - Job history display showing recent completed/failed operations
+  - Job cancellation and cleanup functionality
+  - Comprehensive job metadata tracking (duration, results, errors)
+
+### Enhanced
+- **Background Jobs UI**: Rich visual interface for job management
+  - Live progress bars with percentage completion
+  - Skip count display in orange highlighting
+  - Job duration tracking and display
+  - Status indicators with color-coded job states
+  - Recent jobs history with detailed results
+  - Clear history functionality for completed jobs
+  - Job cancellation controls with confirmation
+
+### Technical Improvements
+- **Job Persistence**: localStorage-based job storage with 10-job history limit
+- **Job Lifecycle Management**: Complete status tracking (running, completed, failed, paused)
+- **Automatic Resumption**: Detects and resumes interrupted jobs on page load
+- **Progress Integration**: Skip tracking fully integrated with background job system
+- **Error Handling**: Comprehensive error tracking and display in job results
+- **Memory Management**: Automatic cleanup of old jobs and subscription management
+
+### Fixed
+- Job state synchronization between background service and UI components
+- Progress callback integration with both old UI and new job system
+- Job completion handling with proper success/error messaging
+- Background job cancellation and cleanup processes
+
 ## [1.6.0] - 2024-12-28
 
 ### Added
