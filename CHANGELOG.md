@@ -12,6 +12,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Analytics dashboard for tag operations
 - Bulk rule import/export functionality
 
+## [1.3.9] - 2025-06-14
+
+### Fixed
+- **CRITICAL**: Fixed segment query translation for customer search
+- Added comprehensive query translation from segment syntax to customer search syntax
+- Fixed email domain queries: `customer_email_domain = 'domain.com'` → `email:*@domain.com`
+- Added support for email, tag, location, date, and state query translations
+- Implemented fallback pattern extraction for untranslatable queries
+
+### Added
+- `translateSegmentQueryToCustomerSearch()` method for query syntax conversion
+- Support for multiple segment query patterns and their customer search equivalents
+- Enhanced logging for query translation debugging
+- Fallback email domain extraction from complex queries
+
+### Technical Changes
+- Comprehensive regex-based query pattern matching and replacement
+- Smart fallback handling for unsupported query patterns
+- Improved customer search query building with proper syntax
+- Enhanced error handling and debugging for query translation
+
 ## [1.3.8] - 2025-06-14
 
 ### Fixed

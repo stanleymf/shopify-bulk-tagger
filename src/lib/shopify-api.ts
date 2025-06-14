@@ -747,6 +747,117 @@ class ShopifyAPIService {
   // Bulk tagging methods for customer segments
   
   /**
+   * Translate segment query syntax to customer search syntax
+   * Shopify segments use different query syntax than customer search
+   */
+  private translateSegmentQueryToCustomerSearch(segmentQuery: string): string {
+    if (!segmentQuery) {
+      return 'state:enabled'; // Default fallback
+    }
+
+    console.log(`Translating segment query: "${segmentQuery}"`);
+
+    // Common segment query patterns and their customer search equivalents
+    const translations: Array<{ pattern: RegExp; replacement: string | ((match: string, ...groups: string[]) => string) }> = [
+      // Email domain queries
+      { 
+        pattern: /customer_email_domain\s*=\s*'([^']+)'/gi, 
+        replacement: (match, domain) => `email:*@${domain}` 
+      },
+      { 
+        pattern: /customer_email_domain\s*=\s*"([^"]+)"/gi, 
+        replacement: (match, domain) => `email:*@${domain}` 
+      },
+      
+      // Email queries
+      { 
+        pattern: /customer_email\s*=\s*'([^']+)'/gi, 
+        replacement: (match, email) => `email:${email}` 
+      },
+      { 
+        pattern: /customer_email\s*=\s*"([^"]+)"/gi, 
+        replacement: (match, email) => `email:${email}` 
+      },
+      
+      // Customer state queries
+      { 
+        pattern: /customer_state\s*=\s*'enabled'/gi, 
+        replacement: 'state:enabled' 
+      },
+      { 
+        pattern: /customer_state\s*=\s*'disabled'/gi, 
+        replacement: 'state:disabled' 
+      },
+      
+      // Tag queries
+      { 
+        pattern: /customer_tags\s*contains\s*'([^']+)'/gi, 
+        replacement: (match, tag) => `tag:${tag}` 
+      },
+      { 
+        pattern: /customer_tags\s*contains\s*"([^"]+)"/gi, 
+        replacement: (match, tag) => `tag:${tag}` 
+      },
+      
+      // Location queries
+      { 
+        pattern: /customer_city\s*=\s*'([^']+)'/gi, 
+        replacement: (match, city) => `address1:${city}` 
+      },
+      { 
+        pattern: /customer_country\s*=\s*'([^']+)'/gi, 
+        replacement: (match, country) => `country:${country}` 
+      },
+      
+      // Date queries (simplified)
+      { 
+        pattern: /customer_created_at\s*>\s*'([^']+)'/gi, 
+        replacement: (match, date) => `created_at:>${date}` 
+      },
+      { 
+        pattern: /customer_updated_at\s*>\s*'([^']+)'/gi, 
+        replacement: (match, date) => `updated_at:>${date}` 
+      },
+    ];
+
+    let translatedQuery = segmentQuery;
+
+    // Apply translations
+    for (const { pattern, replacement } of translations) {
+      if (typeof replacement === 'function') {
+        translatedQuery = translatedQuery.replace(pattern, replacement);
+      } else {
+        translatedQuery = translatedQuery.replace(pattern, replacement);
+      }
+    }
+
+    // If no translation was applied, try some fallback approaches
+    if (translatedQuery === segmentQuery) {
+      console.warn(`No translation found for segment query: "${segmentQuery}"`);
+      
+      // Try to extract email domain from common patterns
+      const emailDomainMatch = segmentQuery.match(/['"]([^'"]*@[^'"]+)['"]/);
+      if (emailDomainMatch) {
+        const email = emailDomainMatch[1];
+        if (email.includes('@')) {
+          const domain = email.split('@')[1];
+          translatedQuery = `email:*@${domain}`;
+          console.log(`Extracted email domain pattern: ${translatedQuery}`);
+        }
+      }
+      
+      // If still no match, use a safe fallback
+      if (translatedQuery === segmentQuery) {
+        console.warn(`Using fallback query for untranslatable segment query`);
+        translatedQuery = 'state:enabled';
+      }
+    }
+
+    console.log(`Translated query: "${segmentQuery}" -> "${translatedQuery}"`);
+    return translatedQuery;
+  }
+
+  /**
    * Get customer IDs from a segment (without full customer data)
    * Uses GraphQL customer search with segment criteria
    */
@@ -785,13 +896,12 @@ class ShopifyAPIService {
       }
     `;
 
-    // Build search query for this segment
-    // For now, we'll use a fallback approach since we can't directly query segment membership
+    // Translate segment query to customer search query
     let searchQuery = '';
     
     if (segment.query) {
-      // If the segment has a query, try to use it
-      searchQuery = segment.query;
+      // Translate the segment query to customer search syntax
+      searchQuery = this.translateSegmentQueryToCustomerSearch(segment.query);
     } else {
       // Fallback: search for customers and then filter (not ideal but works)
       searchQuery = 'state:enabled'; // Get all enabled customers
