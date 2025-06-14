@@ -5,6 +5,40 @@ All notable changes to the Bulk-Tagger project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.0] - 2024-12-19
+
+### Added
+- **⏸️ Pause & Resume Operations**: Complete pause/resume system for bulk tagging operations
+  - **Pause Button**: Yellow "Pause" button in active job UI with confirmation dialog
+  - **Resume Button**: Green "Resume" button in job history for paused operations
+  - **Graceful Pausing**: Operations pause between batches without data loss
+  - **Progress Preservation**: Paused jobs maintain exact progress and can continue from where they left off
+  - **Status Indicators**: Clear visual indicators for paused jobs with progress display
+
+### Enhanced
+- **Background Jobs System**: Extended with comprehensive pause/resume support
+  - `pauseJob()` method for graceful operation pausing
+  - `resumePausedJob()` method for continuing paused operations
+  - Enhanced job status handling with "paused" state
+  - Automatic cancellation signal management for pause/resume cycle
+  - Progress tracking maintained across pause/resume operations
+
+### User Experience
+- **Flexible Operation Control**: Users can now pause long-running operations and resume them later
+- **Visual Progress Indicators**: Paused jobs show current progress (e.g., "Progress: 1,234/4,869")
+- **Confirmation Dialogs**: Pause operations require confirmation to prevent accidental pausing
+- **Success Feedback**: Clear messages when operations are paused or resumed
+- **Job History Enhancement**: Paused jobs clearly marked with ⏸️ icon and progress display
+
+### Technical Implementation
+- **Pause/Resume Workflow**:
+  1. Pause sets cancellation signal to stop current processing gracefully
+  2. Job status updated to "paused" with preserved progress
+  3. Resume clears cancellation signal and restarts operation from last position
+  4. Full cancellation checker integration maintains responsiveness
+- **State Management**: Enhanced job lifecycle with pause/resume state transitions
+- **UI Integration**: Seamless integration with existing background jobs UI
+
 ## [1.8.0] - 2024-12-19
 
 ### Added

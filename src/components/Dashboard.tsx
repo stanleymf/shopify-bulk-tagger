@@ -212,13 +212,6 @@ export function Dashboard() {
   };
 
   const handleCancelBulkTagging = () => {
-    // Cancel any active background job
-    if (activeJob) {
-      backgroundJobsService.cancelJob(activeJob.id);
-      setActiveJob(null);
-      setJobHistory(backgroundJobsService.getAllJobs());
-    }
-    
     setBulkTaggingState({
       isActive: false,
       segmentId: null,
@@ -228,6 +221,45 @@ export function Dashboard() {
     setBulkTagsInput('');
     setError(null);
     setSuccess(null);
+  };
+
+  const handleResumeJob = async (jobId: string) => {
+    try {
+      setError(null);
+      setSuccess(null);
+      
+      // Resume the job
+      await backgroundJobsService.resumePausedJob(jobId, shopifyAPI);
+      
+      // Update UI state
+      const resumedJob = backgroundJobsService.getJob(jobId);
+      if (resumedJob) {
+        setActiveJob(resumedJob);
+        
+        // Subscribe to job updates
+        backgroundJobsService.subscribeToJob(jobId, (updatedJob) => {
+          setActiveJob(updatedJob);
+          setJobHistory(backgroundJobsService.getAllJobs());
+          
+          // If job completed, clear active job
+          if (updatedJob.status !== 'running') {
+            setActiveJob(null);
+            if (updatedJob.status === 'completed') {
+              setSuccess(`Job completed successfully! Processed ${updatedJob.result?.processedCount || 0} customers.`);
+            } else if (updatedJob.status === 'failed') {
+              setError(`Job failed: ${updatedJob.result?.errors.join(', ') || 'Unknown error'}`);
+            } else if (updatedJob.status === 'cancelled') {
+              setSuccess('Job was cancelled successfully.');
+            }
+          }
+        });
+        
+        setSuccess('Job resumed successfully!');
+      }
+    } catch (error) {
+      console.error('Failed to resume job:', error);
+      setError(error instanceof Error ? error.message : 'Failed to resume job');
+    }
   };
 
   const handleExecuteBulkTagging = async () => {
@@ -468,6 +500,21 @@ export function Dashboard() {
                   <div className="flex items-center gap-2">
                     <Button
                       size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        if (confirm('Are you sure you want to pause this operation? You can resume it later.')) {
+                          backgroundJobsService.pauseJob(activeJob.id);
+                          setActiveJob(null);
+                          setJobHistory(backgroundJobsService.getAllJobs());
+                          setSuccess('Bulk tagging operation paused successfully');
+                        }
+                      }}
+                      className="text-xs px-3 py-1 bg-yellow-50 border-yellow-200 text-yellow-700 hover:bg-yellow-100"
+                    >
+                      Pause
+                    </Button>
+                    <Button
+                      size="sm"
                       variant="destructive"
                       onClick={() => {
                         if (confirm('Are you sure you want to stop this operation? This cannot be undone.')) {
@@ -560,6 +607,7 @@ export function Dashboard() {
                             job.status === 'completed' ? 'bg-green-500' :
                             job.status === 'failed' ? 'bg-red-500' :
                             job.status === 'paused' ? 'bg-yellow-500' :
+                            job.status === 'cancelled' ? 'bg-gray-500' :
                             'bg-blue-500'
                           }`}></div>
                           <span className="font-medium">
@@ -568,12 +616,25 @@ export function Dashboard() {
                           <span className="text-gray-600">
                             {job.status === 'running' ? 'Running' : 
                              job.status === 'completed' ? 'Completed' :
-                             job.status === 'failed' ? 'Failed' : 'Paused'}
+                             job.status === 'failed' ? 'Failed' : 
+                             job.status === 'cancelled' ? 'Cancelled' : 'Paused'}
                           </span>
                         </div>
-                        <span className="text-xs text-gray-500">
-                          {backgroundJobsService.getJobDuration(job)}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-gray-500">
+                            {backgroundJobsService.getJobDuration(job)}
+                          </span>
+                          {job.status === 'paused' && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleResumeJob(job.id)}
+                              className="text-xs px-2 py-1 h-6 bg-green-50 border-green-200 text-green-700 hover:bg-green-100"
+                            >
+                              Resume
+                            </Button>
+                          )}
+                        </div>
                       </div>
                       
                       <div className="text-xs text-gray-600 mb-1">
@@ -585,6 +646,12 @@ export function Dashboard() {
                           Processed: {job.result.processedCount}
                           {job.result.skippedCount > 0 && ` | Skipped: ${job.result.skippedCount}`}
                           {job.result.errors.length > 0 && ` | Errors: ${job.result.errors.length}`}
+                        </div>
+                      )}
+                      
+                      {job.status === 'paused' && (
+                        <div className="text-xs text-yellow-600 mt-1 font-medium">
+                          ⏸️ Operation paused - Progress: {job.progress.current}/{job.progress.total}
                         </div>
                       )}
                     </div>

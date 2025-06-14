@@ -419,6 +419,94 @@ class BackgroundJobsService {
     
     return timeDiff > 2 * 60 * 1000; // 2 minutes
   }
+
+  /**
+   * Pause a running job
+   */
+  pauseJob(jobId: string): void {
+    const job = this.jobs.get(jobId);
+    if (!job || job.status !== 'running') return;
+
+    // Set cancellation signal to stop current processing
+    this.cancellationSignals.set(jobId, true);
+    
+    // Update job status to paused
+    job.status = 'paused';
+    job.lastUpdate = new Date().toISOString();
+    job.progress.message = 'Operation paused by user';
+    
+    this.jobs.set(jobId, job);
+    if (this.activeJobId === jobId) {
+      this.activeJobId = null;
+    }
+    this.saveJobsToStorage();
+
+    // Notify progress callback
+    const callback = this.progressCallbacks.get(jobId);
+    if (callback) {
+      callback(job);
+    }
+  }
+
+  /**
+   * Resume a paused job
+   */
+  async resumePausedJob(jobId: string, shopifyAPI: any): Promise<void> {
+    const job = this.jobs.get(jobId);
+    if (!job || job.status !== 'paused') return;
+
+    // Clear any existing cancellation signal
+    this.clearCancellationSignal(jobId);
+    
+    // Update job status to running
+    job.status = 'running';
+    job.lastUpdate = new Date().toISOString();
+    job.progress.message = 'Resuming operation...';
+    
+    this.jobs.set(jobId, job);
+    this.activeJobId = jobId;
+    this.saveJobsToStorage();
+
+    // Notify progress callback
+    const callback = this.progressCallbacks.get(jobId);
+    if (callback) {
+      callback(job);
+    }
+
+    try {
+      let result;
+      if (job.type === 'bulk_add_tags') {
+        result = await shopifyAPI.bulkAddTagsToSegment(
+          job.segmentId,
+          job.tags,
+          (current: number, total: number, skipped: number, message: string) => {
+            this.updateJobProgress(jobId, current, total, skipped, message);
+          },
+          () => this.isJobCancelled(jobId) // Cancellation checker
+        );
+      } else {
+        result = await shopifyAPI.bulkRemoveTagsFromSegment(
+          job.segmentId,
+          job.tags,
+          (current: number, total: number, skipped: number, message: string) => {
+            this.updateJobProgress(jobId, current, total, skipped, message);
+          },
+          () => this.isJobCancelled(jobId) // Cancellation checker
+        );
+      }
+
+      // Complete the job
+      this.completeJob(jobId, result);
+    } catch (error) {
+      // Complete the job with error
+      this.completeJob(jobId, {
+        success: false,
+        processedCount: job.progress.current,
+        skippedCount: job.progress.skipped,
+        errors: [error instanceof Error ? error.message : 'Unknown error during job resumption']
+      });
+    }
+  }
 }
 
 // Export singleton instance
