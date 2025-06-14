@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { shopifyAPI, ShopifyCustomerSegment } from "@/lib/shopify-api";
 import { useConfig } from "@/lib/config-context";
+import { backgroundJobsService, BackgroundJob } from '../lib/background-jobs';
 
 export function Dashboard() {
   const { isConnected } = useConfig();
@@ -41,7 +42,9 @@ export function Dashboard() {
   });
   const [bulkTagsInput, setBulkTagsInput] = useState("");
 
-
+  // Background jobs state
+  const [activeJob, setActiveJob] = useState<BackgroundJob | null>(null);
+  const [jobHistory, setJobHistory] = useState<BackgroundJob[]>([]);
 
   // Load segments on component mount
   useEffect(() => {

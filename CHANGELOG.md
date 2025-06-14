@@ -12,6 +12,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Analytics dashboard for tag operations
 - Bulk rule import/export functionality
 
+## [1.6.0] - 2024-12-28
+
+### Added
+- **Background Jobs Infrastructure**: Persistent bulk tagging operations that survive page refreshes
+- **Job Persistence**: All bulk operations are now stored in localStorage and can resume after page reload
+- **Background Jobs Service**: Comprehensive job management system with progress tracking
+- **Job Status Tracking**: Monitor running, completed, failed, and paused jobs
+- **Automatic Job Resumption**: Jobs automatically resume if interrupted by page refresh
+- **Job History**: View recent job history with detailed status and results
+- **Job Cancellation**: Ability to cancel running jobs
+- **Stale Job Detection**: Automatically handle jobs that timeout after page reload
+
+### Enhanced
+- Bulk tagging operations now persist across browser sessions
+- Real-time job progress tracking with persistent state
+- Better error handling for interrupted operations
+- Improved user experience with background job notifications
+
+### Technical
+- New `BackgroundJobsService` class for job management
+- Persistent job storage using localStorage
+- Job resumption logic with timeout detection
+- Enhanced Dashboard component with job status display
+- Background job state management and UI integration
+
 ## [1.5.1] - 2024-12-28
 
 ### Added
