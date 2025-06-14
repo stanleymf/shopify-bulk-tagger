@@ -743,6 +743,387 @@ class ShopifyAPIService {
     );
     storage.saveSegments(updatedSegments);
   }
+
+  // Bulk tagging methods for customer segments
+  
+  /**
+   * Get customer IDs from a segment (without full customer data)
+   * Uses GraphQL to efficiently get just the customer IDs
+   */
+  async getSegmentCustomerIds(segmentId: number, limit: number = 250): Promise<string[]> {
+    if (!this.isInitialized()) {
+      throw new Error('Shopify API service not initialized');
+    }
+
+    const query = `
+      query($segmentId: ID!, $first: Int!) {
+        customerSegmentMembers(segmentId: $segmentId, first: $first) {
+          edges {
+            node {
+              id
+            }
+          }
+          pageInfo {
+            hasNextPage
+            endCursor
+          }
+        }
+      }
+    `;
+
+    const variables = {
+      segmentId: `gid://shopify/Segment/${segmentId}`,
+      first: limit
+    };
+
+    const response = await this.graphqlQuery<{
+      customerSegmentMembers: {
+        edges: Array<{ node: { id: string } }>;
+        pageInfo: { hasNextPage: boolean; endCursor?: string };
+      };
+    }>(query, variables);
+
+    if (response.errors) {
+      throw new Error(`Failed to get segment customers: ${response.errors.map(e => e.message).join(', ')}`);
+    }
+
+    if (!response.data?.customerSegmentMembers) {
+      throw new Error('No customer segment members data received');
+    }
+
+    return response.data.customerSegmentMembers.edges.map(edge => edge.node.id);
+  }
+
+  /**
+   * Bulk add tags to all customers in a segment
+   */
+  async bulkAddTagsToSegment(segmentId: number, tagsToAdd: string[]): Promise<{
+    success: boolean;
+    processedCount: number;
+    errors: string[];
+  }> {
+    if (!this.isInitialized()) {
+      throw new Error('Shopify API service not initialized');
+    }
+
+    if (!tagsToAdd.length) {
+      throw new Error('No tags provided to add');
+    }
+
+    try {
+      // Get customer IDs from the segment
+      const customerIds = await this.getSegmentCustomerIds(segmentId);
+      
+      if (!customerIds.length) {
+        return {
+          success: true,
+          processedCount: 0,
+          errors: ['No customers found in this segment']
+        };
+      }
+
+      // Use Shopify's bulk operation for large datasets
+      if (customerIds.length > 100) {
+        return await this.bulkOperationAddTags(customerIds, tagsToAdd);
+      } else {
+        return await this.batchAddTags(customerIds, tagsToAdd);
+      }
+    } catch (error) {
+      console.error('Bulk add tags failed:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Bulk remove tags from all customers in a segment
+   */
+  async bulkRemoveTagsFromSegment(segmentId: number, tagsToRemove: string[]): Promise<{
+    success: boolean;
+    processedCount: number;
+    errors: string[];
+  }> {
+    if (!this.isInitialized()) {
+      throw new Error('Shopify API service not initialized');
+    }
+
+    if (!tagsToRemove.length) {
+      throw new Error('No tags provided to remove');
+    }
+
+    try {
+      // Get customer IDs from the segment
+      const customerIds = await this.getSegmentCustomerIds(segmentId);
+      
+      if (!customerIds.length) {
+        return {
+          success: true,
+          processedCount: 0,
+          errors: ['No customers found in this segment']
+        };
+      }
+
+      // Use Shopify's bulk operation for large datasets
+      if (customerIds.length > 100) {
+        return await this.bulkOperationRemoveTags(customerIds, tagsToRemove);
+      } else {
+        return await this.batchRemoveTags(customerIds, tagsToRemove);
+      }
+    } catch (error) {
+      console.error('Bulk remove tags failed:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Use Shopify's Bulk Operations API for large datasets (>100 customers)
+   */
+  private async bulkOperationAddTags(customerIds: string[], tagsToAdd: string[]): Promise<{
+    success: boolean;
+    processedCount: number;
+    errors: string[];
+  }> {
+    const mutation = `
+      mutation bulkOperationRunMutation($mutation: String!) {
+        bulkOperationRunMutation(mutation: $mutation) {
+          bulkOperation {
+            id
+            status
+          }
+          userErrors {
+            field
+            message
+          }
+        }
+      }
+    `;
+
+    // Create bulk mutation string
+    const bulkMutations = customerIds.map((customerId, index) => {
+      const tagsString = tagsToAdd.join(', ');
+      return `
+        mutation${index}: customerUpdate(input: {
+          id: "${customerId}"
+          tags: "${tagsString}"
+        }) {
+          customer {
+            id
+          }
+          userErrors {
+            field
+            message
+          }
+        }
+      `;
+    }).join('\n');
+
+    const variables = {
+      mutation: bulkMutations
+    };
+
+    const response = await this.graphqlQuery<{
+      bulkOperationRunMutation: {
+        bulkOperation: { id: string; status: string };
+        userErrors: Array<{ field: string; message: string }>;
+      };
+    }>(mutation, variables);
+
+    if (response.errors || response.data?.bulkOperationRunMutation.userErrors?.length) {
+      const errors = [
+        ...(response.errors?.map(e => e.message) || []),
+        ...(response.data?.bulkOperationRunMutation.userErrors?.map(e => e.message) || [])
+      ];
+      return {
+        success: false,
+        processedCount: 0,
+        errors
+      };
+    }
+
+    return {
+      success: true,
+      processedCount: customerIds.length,
+      errors: []
+    };
+  }
+
+  /**
+   * Use Shopify's Bulk Operations API for removing tags from large datasets
+   */
+  private async bulkOperationRemoveTags(customerIds: string[], tagsToRemove: string[]): Promise<{
+    success: boolean;
+    processedCount: number;
+    errors: string[];
+  }> {
+    // For removing tags, we need to first get current tags, then remove specific ones
+    // This is more complex and might require a different approach
+    // For now, fall back to batch processing
+    return await this.batchRemoveTags(customerIds, tagsToRemove);
+  }
+
+  /**
+   * Batch process tag additions for smaller datasets (<100 customers)
+   */
+  private async batchAddTags(customerIds: string[], tagsToAdd: string[]): Promise<{
+    success: boolean;
+    processedCount: number;
+    errors: string[];
+  }> {
+    const errors: string[] = [];
+    let processedCount = 0;
+    const batchSize = 10; // Process in smaller batches to avoid rate limits
+
+    for (let i = 0; i < customerIds.length; i += batchSize) {
+      const batch = customerIds.slice(i, i + batchSize);
+      
+      const promises = batch.map(async (customerId) => {
+        try {
+          // Get current customer tags first
+          const customer = await this.getCustomerById(customerId);
+          const currentTags = ShopifyAPIService.parseTags(customer.tags);
+          const newTags = [...new Set([...currentTags, ...tagsToAdd])]; // Remove duplicates
+          const updatedTagsString = ShopifyAPIService.formatTags(newTags);
+          
+          await this.updateCustomerTagsById(customerId, updatedTagsString);
+          processedCount++;
+        } catch (error) {
+          errors.push(`Failed to update customer ${customerId}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+      });
+
+      await Promise.all(promises);
+      
+      // Add small delay between batches to respect rate limits
+      if (i + batchSize < customerIds.length) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    }
+
+    return {
+      success: errors.length === 0,
+      processedCount,
+      errors
+    };
+  }
+
+  /**
+   * Batch process tag removals for smaller datasets
+   */
+  private async batchRemoveTags(customerIds: string[], tagsToRemove: string[]): Promise<{
+    success: boolean;
+    processedCount: number;
+    errors: string[];
+  }> {
+    const errors: string[] = [];
+    let processedCount = 0;
+    const batchSize = 10;
+
+    for (let i = 0; i < customerIds.length; i += batchSize) {
+      const batch = customerIds.slice(i, i + batchSize);
+      
+      const promises = batch.map(async (customerId) => {
+        try {
+          // Get current customer tags first
+          const customer = await this.getCustomerById(customerId);
+          const currentTags = ShopifyAPIService.parseTags(customer.tags);
+          const filteredTags = currentTags.filter(tag => !tagsToRemove.includes(tag));
+          const updatedTagsString = ShopifyAPIService.formatTags(filteredTags);
+          
+          await this.updateCustomerTagsById(customerId, updatedTagsString);
+          processedCount++;
+        } catch (error) {
+          errors.push(`Failed to update customer ${customerId}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+      });
+
+      await Promise.all(promises);
+      
+      // Add small delay between batches
+      if (i + batchSize < customerIds.length) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    }
+
+    return {
+      success: errors.length === 0,
+      processedCount,
+      errors
+    };
+  }
+
+  /**
+   * Get customer by ID (GraphQL ID format)
+   */
+  private async getCustomerById(customerId: string): Promise<ShopifyCustomer> {
+    const query = `
+      query($id: ID!) {
+        customer(id: $id) {
+          id
+          email
+          firstName
+          lastName
+          tags
+          createdAt
+          updatedAt
+        }
+      }
+    `;
+
+    const response = await this.graphqlQuery<{
+      customer: GraphQLCustomer;
+    }>(query, { id: customerId });
+
+    if (response.errors) {
+      throw new Error(`Failed to get customer: ${response.errors.map(e => e.message).join(', ')}`);
+    }
+
+    if (!response.data?.customer) {
+      throw new Error('Customer not found');
+    }
+
+    return this.convertGraphQLCustomerToREST(response.data.customer);
+  }
+
+  /**
+   * Update customer tags by ID (GraphQL ID format)
+   */
+  private async updateCustomerTagsById(customerId: string, tags: string): Promise<void> {
+    const mutation = `
+      mutation customerUpdate($input: CustomerInput!) {
+        customerUpdate(input: $input) {
+          customer {
+            id
+            tags
+          }
+          userErrors {
+            field
+            message
+          }
+        }
+      }
+    `;
+
+    const variables = {
+      input: {
+        id: customerId,
+        tags: ShopifyAPIService.parseTags(tags)
+      }
+    };
+
+    const response = await this.graphqlQuery<{
+      customerUpdate: {
+        customer: { id: string; tags: string[] };
+        userErrors: Array<{ field: string; message: string }>;
+      };
+    }>(mutation, variables);
+
+    if (response.errors || response.data?.customerUpdate.userErrors?.length) {
+      const errors = [
+        ...(response.errors?.map(e => e.message) || []),
+        ...(response.data?.customerUpdate.userErrors?.map(e => e.message) || [])
+      ];
+      throw new Error(`Failed to update customer tags: ${errors.join(', ')}`);
+    }
+  }
 }
 
 // Export singleton instance

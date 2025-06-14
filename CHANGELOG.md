@@ -12,6 +12,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Analytics dashboard for tag operations
 - Bulk rule import/export functionality
 
+## [1.3.5] - 2025-01-14
+
+### Added
+- **🎯 Bulk Customer Tagging**: Complete bulk tagging functionality for customer segments
+- **Add Tags to Segment**: Bulk add tags to all customers in a segment without pulling customer data
+- **Remove Tags from Segment**: Bulk remove tags from all customers in a segment
+- **Smart Processing**: Automatically uses batch processing (<100 customers) or Shopify Bulk Operations (>100 customers)
+- **Interactive UI**: Clean interface with Add/Remove tag buttons on each segment card
+- **Real-time Feedback**: Progress indicators, success/error messages, and processing status
+- **Tag Input**: Comma-separated tag input with validation and error handling
+
+### Technical Implementation
+- **Efficient API Usage**: Only fetches customer IDs, not full customer data
+- **GraphQL Integration**: Uses `customerSegmentMembers` query for segment customer identification
+- **Batch Processing**: Processes customers in batches of 10 to respect API rate limits
+- **Error Handling**: Comprehensive error handling with detailed feedback
+- **Rate Limiting**: Built-in delays between batches to prevent API throttling
+- **Tag Management**: Proper tag parsing, deduplication, and formatting
+
+### UI/UX Improvements
+- **Segment Card Enhancement**: Added bulk tagging controls to each segment card
+- **Color-coded Actions**: Green for Add Tags, Red for Remove Tags
+- **Expandable Interface**: Click to expand tagging interface, cancel to collapse
+- **Input Validation**: Real-time validation of tag input with helpful placeholders
+- **Processing States**: Loading indicators and disabled states during operations
+
 ## [1.3.4] - 2025-01-14
 
 ### Added

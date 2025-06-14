@@ -12,7 +12,9 @@ import {
   CheckCircle,
   Loader2,
   Search,
-  Hash
+  Hash,
+  Tag,
+  TagIcon
 } from "lucide-react";
 import { shopifyAPI, ShopifyCustomerSegment } from "@/lib/shopify-api";
 import { useConfig } from "@/lib/config-context";
@@ -24,6 +26,12 @@ export function Dashboard() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+
+  // Bulk tagging state
+  const [bulkTaggingSegmentId, setBulkTaggingSegmentId] = useState<number | null>(null);
+  const [bulkTagsInput, setBulkTagsInput] = useState("");
+  const [isBulkTagging, setIsBulkTagging] = useState(false);
+  const [bulkTaggingMode, setBulkTaggingMode] = useState<'add' | 'remove' | null>(null);
 
   // Load segments on component mount
   useEffect(() => {
@@ -109,6 +117,73 @@ export function Dashboard() {
     localStorage.setItem('shopify_segments', JSON.stringify(clearedSegments));
     setSegments(clearedSegments);
     setSuccess('Cleared all customer counts - Load Count buttons should now be visible');
+  };
+
+  // Bulk tagging handlers
+  const handleStartBulkTagging = (segmentId: number, mode: 'add' | 'remove') => {
+    setBulkTaggingSegmentId(segmentId);
+    setBulkTaggingMode(mode);
+    setBulkTagsInput("");
+    setError(null);
+    setSuccess(null);
+  };
+
+  const handleCancelBulkTagging = () => {
+    setBulkTaggingSegmentId(null);
+    setBulkTaggingMode(null);
+    setBulkTagsInput("");
+  };
+
+  const handleBulkTagging = async () => {
+    if (!bulkTaggingSegmentId || !bulkTaggingMode || !bulkTagsInput.trim()) {
+      setError('Please enter tags to process');
+      return;
+    }
+
+    setIsBulkTagging(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      if (!shopifyAPI.isInitialized()) {
+        throw new Error('Please connect your Shopify store in Settings first');
+      }
+
+      // Parse tags from input (comma-separated)
+      const tags = bulkTagsInput
+        .split(',')
+        .map(tag => tag.trim())
+        .filter(tag => tag.length > 0);
+
+      if (tags.length === 0) {
+        throw new Error('Please enter valid tags');
+      }
+
+      let result;
+      if (bulkTaggingMode === 'add') {
+        result = await shopifyAPI.bulkAddTagsToSegment(bulkTaggingSegmentId, tags);
+      } else {
+        result = await shopifyAPI.bulkRemoveTagsFromSegment(bulkTaggingSegmentId, tags);
+      }
+
+      if (result.success) {
+        const segment = segments.find(s => s.id === bulkTaggingSegmentId);
+        const segmentName = segment?.name || 'Unknown Segment';
+        const action = bulkTaggingMode === 'add' ? 'added to' : 'removed from';
+        
+        setSuccess(
+          `Successfully ${action} ${result.processedCount} customers in "${segmentName}" with tags: ${tags.join(', ')}`
+        );
+        handleCancelBulkTagging();
+      } else {
+        setError(`Bulk tagging completed with errors: ${result.errors.join(', ')}`);
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to process bulk tagging';
+      setError(errorMessage);
+    } finally {
+      setIsBulkTagging(false);
+    }
   };
 
   const totalCustomers = segments.reduce((sum, segment) => sum + (segment.customer_count || 0), 0);
@@ -338,6 +413,82 @@ export function Dashboard() {
                             </div>
                           </div>
                         </div>
+                        
+                        {/* Bulk Tagging Section */}
+                        {bulkTaggingSegmentId === segment.id ? (
+                          <div className="bg-blue-50 border border-blue-200 rounded-md p-3 space-y-3">
+                            <div className="flex items-center justify-between">
+                              <div className="text-sm font-medium text-blue-900">
+                                {bulkTaggingMode === 'add' ? 'Add Tags' : 'Remove Tags'}
+                              </div>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={handleCancelBulkTagging}
+                                className="h-6 w-6 p-0 text-blue-600 hover:text-blue-800"
+                              >
+                                ×
+                              </Button>
+                            </div>
+                            <Input
+                              placeholder="Enter tags separated by commas (e.g., vip, newsletter, sale)"
+                              value={bulkTagsInput}
+                              onChange={(e) => setBulkTagsInput(e.target.value)}
+                              className="text-sm"
+                              disabled={isBulkTagging}
+                            />
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                onClick={handleBulkTagging}
+                                disabled={isBulkTagging || !bulkTagsInput.trim()}
+                                className="bg-blue-600 hover:bg-blue-700 text-xs"
+                              >
+                                {isBulkTagging ? (
+                                  <>
+                                    <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                                    Processing...
+                                  </>
+                                ) : (
+                                  <>
+                                    <Tag className="h-3 w-3 mr-1" />
+                                    {bulkTaggingMode === 'add' ? 'Add Tags' : 'Remove Tags'}
+                                  </>
+                                )}
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={handleCancelBulkTagging}
+                                disabled={isBulkTagging}
+                                className="text-xs"
+                              >
+                                Cancel
+                              </Button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleStartBulkTagging(segment.id, 'add')}
+                              className="flex-1 text-xs h-8 border-green-300 text-green-700 hover:bg-green-50"
+                            >
+                              <Plus className="h-3 w-3 mr-1" />
+                              Add Tags
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleStartBulkTagging(segment.id, 'remove')}
+                              className="flex-1 text-xs h-8 border-red-300 text-red-700 hover:bg-red-50"
+                            >
+                              <TagIcon className="h-3 w-3 mr-1" />
+                              Remove Tags
+                            </Button>
+                          </div>
+                        )}
                       </div>
                     </CardContent>
                   </Card>
