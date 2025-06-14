@@ -1,0 +1,19 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="32" height="32" rx="8" fill="#2563eb"/>
+  
+  <!-- Tag icon -->
+  <path d="M6 10C6 7.79086 7.79086 6 10 6H22C24.2091 6 26 7.79086 26 10V22C26 24.2091 24.2091 26 22 26H10C7.79086 26 6 24.2091 6 22V10Z" fill="white"/>
+  
+  <!-- Tag hole -->
+  <circle cx="10" cy="10" r="1.5" fill="#2563eb"/>
+  
+  <!-- Tag content -->
+  <rect x="12" y="12" width="8" height="2" rx="1" fill="#2563eb"/>
+  <rect x="12" y="16" width="6" height="2" rx="1" fill="#2563eb"/>
+  <rect x="12" y="20" width="4" height="2" rx="1" fill="#2563eb"/>
+  
+  <!-- Decorative elements -->
+  <circle cx="24" cy="8" r="2" fill="white" opacity="0.3"/>
+  <circle cx="8" cy="24" r="1.5" fill="white" opacity="0.2"/>
+</svg> 

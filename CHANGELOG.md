@@ -13,6 +13,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Analytics dashboard for tag operations
 - Bulk rule import/export functionality
 
+## [1.2.3] - 2024-01-15
+
+### Added
+- Custom favicon with tag icon design
+- Professional browser tab title
+- Meta description for SEO
+
+### Changed
+- Updated browser tab title from "React Starter" to "Bulk Tagger - Shopify Customer Tagging Automation"
+- Replaced default Vite favicon with custom tag-themed favicon
+- Enhanced brand identity with consistent blue color scheme
+
+### Features
+- Professional favicon design with tag icon and app branding
+- Descriptive browser tab title for better user experience
+- SEO-friendly meta description
+- Consistent visual identity across browser tabs
+
+### Technical Details
+- Custom SVG favicon with scalable design
+- Updated HTML head section with proper meta tags
+- Brand-consistent color scheme (#2563eb blue)
+- Responsive favicon that works across all devices
+
 ## [1.2.2] - 2024-01-15
 
 ### Added
