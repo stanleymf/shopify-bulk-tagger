@@ -12,6 +12,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Analytics dashboard for tag operations
 - Bulk rule import/export functionality
 
+## [1.3.4] - 2025-01-14
+
+### Added
+- **Debug Feature**: Added "Clear Counts (Debug)" button to reset customer counts
+- **Load Count Button Visibility**: Debug button allows users to see Load Count buttons again
+- **User Experience**: Helps users understand the Load Count functionality behavior
+
+### Fixed
+- **Load Count Button Issue**: Addressed user concern about Load Count buttons not being visible
+- **Explanation**: Load Count buttons are hidden when customer counts are already loaded (cached in localStorage)
+- **Expected Behavior**: This is correct functionality to prevent redundant API calls
+
+### Technical Notes
+- Customer counts persist in localStorage after being loaded once
+- Load Count buttons only appear when `customer_count` is undefined
+- Debug button temporarily resets this state for demonstration purposes
+
 ## [1.3.3] - 2025-01-14
 
 ### Improved

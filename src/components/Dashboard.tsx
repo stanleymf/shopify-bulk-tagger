@@ -97,6 +97,20 @@ export function Dashboard() {
     window.location.hash = '#settings';
   };
 
+  const handleClearCounts = () => {
+    // Clear all customer counts for debugging
+    const clearedSegments = segments.map(segment => ({
+      ...segment,
+      customer_count: undefined,
+      is_loading_count: false
+    }));
+    
+    // Update localStorage
+    localStorage.setItem('shopify_segments', JSON.stringify(clearedSegments));
+    setSegments(clearedSegments);
+    setSuccess('Cleared all customer counts - Load Count buttons should now be visible');
+  };
+
   const totalCustomers = segments.reduce((sum, segment) => sum + (segment.customer_count || 0), 0);
   const lastSync = shopifyAPI.getLastSync();
 
@@ -107,14 +121,23 @@ export function Dashboard() {
           <h1 className="text-2xl font-semibold text-gray-900">Customer Segments</h1>
           <p className="text-gray-600 mt-1">Manage your Shopify customer segments and their tags</p>
         </div>
-        <Button 
-          onClick={handleRefresh} 
-          disabled={isRefreshing || !isConnected}
-          className="bg-blue-600 hover:bg-blue-700"
-        >
-          <RefreshCw className={`h-4 w-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
-          Sync Segments
-        </Button>
+        <div className="flex gap-2">
+          <Button 
+            onClick={handleClearCounts} 
+            variant="outline"
+            className="border-gray-300 hover:bg-gray-50 text-xs"
+          >
+            Clear Counts (Debug)
+          </Button>
+          <Button 
+            onClick={handleRefresh} 
+            disabled={isRefreshing || !isConnected}
+            className="bg-blue-600 hover:bg-blue-700"
+          >
+            <RefreshCw className={`h-4 w-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
+            Sync Segments
+          </Button>
+        </div>
       </div>
 
       {/* Search Bar */}
