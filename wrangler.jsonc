@@ -14,5 +14,12 @@
   },
   "observability": {
     "enabled": true
-  }
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "bulk-tagger-db",
+      "database_id": "7019a966-3872-414c-811e-db2aa08e5e67"
+    }
+  ]
 }

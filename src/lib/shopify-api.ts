@@ -1,7 +1,7 @@
 // Shopify API Service Layer
 // Handles all interactions with Shopify APIs for customer segments and tagging
 
-import { storage, ShopifyConfig } from './storage';
+import { migrationService } from './migration-service';
 
 export interface ShopifyCustomerSegment {
   id: number;
@@ -91,10 +91,10 @@ class ShopifyAPIService {
     this.initializeFromStorage();
   }
 
-  // Initialize from stored configuration
-  private initializeFromStorage(): void {
+  // Initialize from stored configuration using migration service
+  private async initializeFromStorage(): Promise<void> {
     try {
-      const config = storage.getShopifyConfig();
+      const config = await migrationService.getShopifyConfig();
       if (config && config.isConnected && config.shopDomain && config.accessToken) {
         this.initialize(config.shopDomain, config.accessToken);
       }
@@ -316,8 +316,8 @@ class ShopifyAPIService {
     });
 
     // Store segments in local storage
-    storage.saveSegments(segments);
-    storage.updateLastSync();
+    await migrationService.saveSegmentsAsync(segments);
+    await migrationService.updateLastSyncAsync();
     
     return segments;
   }
@@ -644,20 +644,30 @@ class ShopifyAPIService {
     }
   }
 
-  // Get stored segments from local storage
-  getStoredSegments(): ShopifyCustomerSegment[] {
-    return storage.getSegments();
+  // Get stored segments from local storage  
+  async getStoredSegments(): Promise<ShopifyCustomerSegment[]> {
+    return await migrationService.getSegmentsAsync();
+  }
+
+  // Get stored segments synchronously for UI components
+  getStoredSegmentsSync(): ShopifyCustomerSegment[] {
+    return migrationService.getSegments();
   }
 
   // Get last sync timestamp
-  getLastSync(): string | null {
-    return storage.getLastSync();
+  async getLastSync(): Promise<string | null> {
+    return await migrationService.getLastSyncAsync();
+  }
+
+  // Get last sync timestamp synchronously for UI components
+  getLastSyncSync(): string | null {
+    return migrationService.getLastSync();
   }
 
   // Clear stored data
-  clearStoredData(): void {
-    storage.saveSegments([]);
-    storage.saveAppData({ lastSync: null });
+  async clearStoredData(): Promise<void> {
+    await migrationService.saveSegmentsAsync([]);
+    await migrationService.saveAppDataAsync({ lastSync: null });
   }
 
   // Utility methods for tag manipulation
@@ -723,25 +733,25 @@ class ShopifyAPIService {
   }
 
   // Update stored segment with customer count
-  updateSegmentCustomerCount(segmentId: number, count: number): void {
-    const segments = this.getStoredSegments();
+  async updateSegmentCustomerCount(segmentId: number, count: number): Promise<void> {
+    const segments = await this.getStoredSegments();
     const updatedSegments = segments.map(segment => 
       segment.id === segmentId 
         ? { ...segment, customer_count: count, is_loading_count: false }
         : segment
     );
-    storage.saveSegments(updatedSegments);
+    await migrationService.saveSegmentsAsync(updatedSegments);
   }
 
   // Set loading state for segment count
-  setSegmentCountLoading(segmentId: number, isLoading: boolean): void {
-    const segments = this.getStoredSegments();
+  async setSegmentCountLoading(segmentId: number, isLoading: boolean): Promise<void> {
+    const segments = await this.getStoredSegments();
     const updatedSegments = segments.map(segment => 
       segment.id === segmentId 
         ? { ...segment, is_loading_count: isLoading }
         : segment
     );
-    storage.saveSegments(updatedSegments);
+    await migrationService.saveSegmentsAsync(updatedSegments);
   }
 
   // Bulk tagging methods for customer segments
@@ -869,7 +879,7 @@ class ShopifyAPIService {
     console.log(`Fetching customer IDs for segment ${segmentId} with limit ${limit}...`);
 
     // First, try to get the segment to understand its query
-    const segments = this.getStoredSegments();
+    const segments = await this.getStoredSegments();
     const segment = segments.find(s => s.id === segmentId);
     
     if (!segment) {

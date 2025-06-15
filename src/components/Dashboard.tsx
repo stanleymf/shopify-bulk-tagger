@@ -98,7 +98,7 @@ export function Dashboard() {
   const loadSegments = () => {
     try {
       // Load segments from storage first
-      const storedSegments = shopifyAPI.getStoredSegments();
+      const storedSegments = shopifyAPI.getStoredSegmentsSync();
       setSegments(storedSegments);
     } catch (error) {
       console.error('Failed to load segments:', error);
@@ -131,14 +131,14 @@ export function Dashboard() {
   const handleLoadCustomerCount = async (segmentId: number) => {
     try {
       // Set loading state
-      shopifyAPI.setSegmentCountLoading(segmentId, true);
+      await shopifyAPI.setSegmentCountLoading(segmentId, true);
       loadSegments(); // Refresh UI to show loading state
 
       // Fetch customer count
       const count = await shopifyAPI.getSegmentCustomerCount(segmentId);
       
       // Update segment with count
-      shopifyAPI.updateSegmentCustomerCount(segmentId, count);
+      await shopifyAPI.updateSegmentCustomerCount(segmentId, count);
       loadSegments(); // Refresh UI to show count
       
     } catch (err) {
@@ -146,7 +146,7 @@ export function Dashboard() {
       setError(errorMessage);
       
       // Clear loading state on error
-      shopifyAPI.setSegmentCountLoading(segmentId, false);
+      await shopifyAPI.setSegmentCountLoading(segmentId, false);
       loadSegments();
     }
   };
@@ -419,7 +419,7 @@ export function Dashboard() {
   };
 
   const totalCustomers = segments.reduce((sum, segment) => sum + (segment.customer_count || 0), 0);
-  const lastSync = shopifyAPI.getLastSync();
+  const lastSync = shopifyAPI.getLastSyncSync();
 
   return (
     <div className="p-6 space-y-6">

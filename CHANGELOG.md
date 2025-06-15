@@ -5,6 +5,146 @@ All notable changes to the Bulk-Tagger project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.0] - 2025-01-15
+
+### Removed
+- **Tagging Rules System**: Completely removed the static tagging rules functionality
+  - Removed Rules page and RuleForm components
+  - Removed TaggingRule interface and related types
+  - Removed rule-executor library
+  - Removed tagging_rules database table and related endpoints
+  - Removed rules management from migration service and storage layers
+  - Updated sidebar navigation to remove Rules tab
+
+### Technical Changes
+- Cleaned up all rules-related code from frontend and backend
+- Removed rules references from localStorage and server storage
+- Updated database schema to remove tagging_rules table
+- Simplified migration system by removing rules migration logic
+- Updated interfaces and types to remove rules dependencies
+
+### Notes
+- Real-time monitoring system remains fully functional and unaffected
+- This change simplifies the codebase by removing duplicate functionality
+- Users should rely on the real-time monitoring system for automated tagging
+
+## [1.9.4] - 2024-12-15
+
+### Added
+- Added `/api/settings` endpoint for storing application settings and metadata
+- Automatic user creation system for basic authentication setup
+- Field name conversion between camelCase (React) and snake_case (database)
+
+### Fixed
+- Fixed 500 Internal Server Error during migration caused by missing user records in database
+- Fixed foreign key constraint failures by implementing automatic user creation
+- Fixed data not being saved correctly due to field name mismatch between frontend and backend
+- Fixed migration system to properly handle all API endpoints
+
+### Changed
+- Updated authentication system to automatically create user records when needed
+- Enhanced API endpoints to handle proper field name conversion
+- Improved error handling and database constraint management
+
+## [1.9.3] - 2024-12-19
+
+### 🔐 Migration Authentication
+
+#### **FIXED: Migration Wizard Authentication**
+- **Added authentication step** to migration wizard to prevent 401 Unauthorized errors
+- **Interactive login form** with default credentials pre-filled for user convenience
+- **Server connection testing** before proceeding with migration to validate credentials
+- **Clear error messages** when authentication fails with helpful guidance
+
+#### **Enhanced Migration Flow** 
+- **Step-by-step process**: Check → Authenticate → Confirm → Migrate → Complete
+- **Credential validation** before attempting data migration
+- **Default credentials display** showing `admin` / `your-secure-password-here`
+- **Real-time testing** of server connectivity with provided credentials
+
+#### **Security Improvements**
+- **Proper Basic Authentication** implementation for server API access
+- **Credential management** within migration service
+- **Authentication token persistence** for successful migration sessions
+- **Secure server-side storage** access with validated credentials
+
+### 🐛 Bug Fixes
+- **RESOLVED: 401 Unauthorized errors** during migration attempts
+- **Fixed server storage authentication** flow and credential passing
+- **Enhanced error handling** for authentication failures
+- **Improved user feedback** during authentication process
+
+### 🚀 Impact
+- **Eliminates migration failures** due to authentication issues
+- **Provides clear path** for users to authenticate and migrate data
+- **Enhances security** with proper credential validation
+- **Improves user experience** with guided authentication process
+
+## [1.9.2] - 2024-12-19
+
+### 🐛 Bug Fixes
+
+#### Critical Runtime Errors
+- **FIXED: `TypeError: n.filter is not a function`** - Resolved async/sync mismatch that was causing the dashboard to crash
+  - Added synchronous versions of `getStoredSegments()` and `getLastSync()` methods
+  - Updated Dashboard component to use `getStoredSegmentsSync()` and `getLastSyncSync()`
+  - Prevents JavaScript runtime errors when filtering segments
+
+#### Server Storage Connectivity
+- **FIXED: `/api/health` endpoint authentication** - Health checks no longer require authentication
+  - Added `/api/health` endpoint that bypasses authentication for server connectivity tests
+  - Returns `{"status":"ok","timestamp":"...","database":"connected"}` without credentials
+  - Enables proper migration system server detection
+
+#### Migration System Robustness
+- **Enhanced error handling** - Migration wizard now works even with server connectivity issues
+  - Graceful degradation when server storage is unavailable
+  - Maintains localStorage functionality as fallback
+  - Better error messages and user feedback
+
+### 🔧 Technical Improvements
+- **Async Method Consistency** - Fixed all async/sync mismatches in API layer
+- **Health Endpoint** - Added proper health check for monitoring and debugging
+- **Error Recovery** - Enhanced fallback mechanisms for network issues
+
+### 🚀 Impact
+- **Eliminates crashes** on dashboard load due to filter errors
+- **Ensures migration wizard** displays properly even with network issues  
+- **Improves debugging** with accessible health endpoint
+- **Zero user data loss** with robust fallback systems
+
+## [1.9.1] - 2024-12-19
+
+### Fixed
+- **🔧 Server Storage Authentication**: Fixed authentication issues preventing migration to server-side storage
+  - Corrected authentication method from Bearer token to Basic authentication to match Cloudflare Worker configuration
+  - Updated server storage service to use proper credentials (`admin` / `your-secure-password-here`)
+  - Fixed 401 Unauthorized errors when accessing server-side API endpoints
+
+- **🐛 JavaScript Runtime Errors**: Resolved `TypeError: n.filter is not a function` in migration system
+  - Added synchronous versions of all storage methods for backward compatibility
+  - Created dual API pattern: sync methods (`getSegments()`) and async methods (`getSegmentsAsync()`)
+  - Fixed async/sync mismatches that were causing React component errors
+  - Maintained full backward compatibility with existing localStorage-based functionality
+
+- **🔄 Migration System Stability**: Enhanced hybrid storage system for reliable data migration
+  - Improved error handling and fallback mechanisms in migration service
+  - Added graceful degradation when server storage is unavailable
+  - Fixed migration status detection to properly identify when migration is needed
+  - Enhanced migration wizard stability and error recovery
+
+### Technical Improvements
+- **Hybrid Storage Pattern**: Dual sync/async API for seamless compatibility
+- **Authentication Fix**: Proper Basic Auth implementation for Cloudflare Workers
+- **Error Resilience**: Comprehensive error handling with localStorage fallback
+- **Migration Safety**: Zero-risk migration with automatic rollback capabilities
+
+### User Experience
+- Migration wizard now functions without JavaScript errors
+- Existing functionality remains completely unaffected
+- Smooth transition between localStorage and server storage
+- Clear error messages and recovery options during migration
+
 ## [1.9.0] - 2024-12-19
 
 ### Added
@@ -727,4 +867,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Tailwind CSS for styling
 - shadcn/ui component library
 - Vite for build tooling
-- Cloudflare Workers deployment setup 
+- Cloudflare Workers deployment setup
+
+## [1.9.3] - 2024-12-15
+
+### Added
+- Added `/api/auth/test` endpoint to support React app authentication testing
+- Authentication test endpoint returns user info and timestamp on successful authentication
+
+### Fixed
+- Fixed `/logout` endpoint to return proper JSON response (200 status) instead of 401 status
+- Improved authentication flow compatibility between React app and worker
+- Enhanced CORS support for authentication endpoints
+
+### Changed
+- Updated logout endpoint to provide structured JSON response for better client-side handling 

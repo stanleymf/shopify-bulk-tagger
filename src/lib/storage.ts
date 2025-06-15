@@ -16,7 +16,7 @@ export interface ShopifyConfig {
 export interface AppData {
   shopifyConfig: ShopifyConfig | null;
   segments: any[];
-  rules: any[];
+
   lastSync: string | null;
   monitoringRules?: any[];
   segmentSnapshots?: Array<[number, any]>;
@@ -188,7 +188,6 @@ class StorageManager {
     return {
       shopifyConfig: null,
       segments: [],
-      rules: [],
       lastSync: null,
     };
   }
@@ -264,15 +263,7 @@ class StorageManager {
     return this.getAppData().segments;
   }
 
-  // Save rules data
-  saveRules(rules: any[]): void {
-    this.saveAppData({ rules });
-  }
 
-  // Get rules data
-  getRules(): any[] {
-    return this.getAppData().rules;
-  }
 
   // Update last sync timestamp
   updateLastSync(): void {

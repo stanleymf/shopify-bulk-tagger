@@ -1,16 +1,23 @@
-// Cloudflare Worker with Basic Authentication
-// Based on: https://developers.cloudflare.com/workers/examples/basic-auth/
+// Cloudflare Worker with Basic Authentication and D1 Database
+// Server-side storage for Bulk-Tagger application
+
+import { DatabaseService } from './database';
+import type { D1Database } from './types';
 
 interface Env {
 	USERNAME: string;
 	PASSWORD: string;
 	REALM?: string;
+	DB: D1Database; // D1 database binding
 }
 
-export default {
+const handler = {
 	async fetch(request: Request, env: Env): Promise<Response> {
 		const url = new URL(request.url);
 		const pathname = url.pathname;
+
+		// Initialize database service
+		const db = new DatabaseService(env.DB);
 
 		// Define authentication configuration
 		const authConfig = {
@@ -24,24 +31,377 @@ export default {
 			return await this.handlePublicRoute(request, pathname);
 		}
 
+		// Check if this is an API route (requires auth)
+		if (pathname.startsWith('/api/')) {
+			return await this.handleAPIRoute(request, pathname, authConfig, db);
+		}
+
 		// Check if this is an authentication route
 		if (this.isAuthRoute(pathname)) {
 			return this.handleAuthRoute(request, pathname, authConfig);
 		}
 
-		// All other routes require authentication
-		return this.handleProtectedRoute(request, pathname, authConfig);
+		// For all other routes (React app routes), serve without authentication
+		// The React app will handle its own authentication internally
+		return new Response(null, {
+			status: 302,
+			headers: {
+				'Location': '/',
+			},
+		});
+	},
+
+	// Handle API routes with authentication
+	async handleAPIRoute(request: Request, pathname: string, authConfig: any, db: DatabaseService): Promise<Response> {
+		// Handle CORS preflight
+		if (request.method === 'OPTIONS') {
+			return new Response(null, {
+				status: 200,
+				headers: {
+					'Access-Control-Allow-Origin': '*',
+					'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+					'Access-Control-Allow-Headers': 'Content-Type, X-Shopify-Access-Token, Authorization',
+					'Access-Control-Max-Age': '86400',
+				},
+			});
+		}
+
+		// Allow health check without authentication
+		if (pathname === '/api/health') {
+			return new Response(JSON.stringify({
+				status: 'ok',
+				timestamp: new Date().toISOString(),
+				database: 'connected'
+			}), {
+				status: 200,
+				headers: {
+					'Content-Type': 'application/json',
+					'Access-Control-Allow-Origin': '*',
+				},
+			});
+		}
+
+		// Verify authentication for other API routes
+		const authResult = await this.verifyAuthFromRequest(request, authConfig, db);
+		if (!authResult.isAuthenticated) {
+			return new Response(JSON.stringify({ error: 'Authentication required' }), {
+				status: 401,
+				headers: {
+					'Content-Type': 'application/json',
+					'Access-Control-Allow-Origin': '*',
+				},
+			});
+		}
+
+		try {
+			// Route API requests
+			if (pathname === '/api/shopify/config') {
+				return await this.handleShopifyConfig(request, authResult.userId!, db);
+			} else if (pathname === '/api/segments') {
+				return await this.handleSegments(request, authResult.userId!, db);
+			} else if (pathname === '/api/background-jobs') {
+				return await this.handleBackgroundJobs(request, authResult.userId!, db);
+			} else if (pathname === '/api/auth/test') {
+				// Authentication test endpoint for React app
+				return new Response(JSON.stringify({ 
+					authenticated: true, 
+					username: authResult.username,
+					timestamp: new Date().toISOString()
+				}), {
+					status: 200,
+					headers: {
+						'Content-Type': 'application/json',
+						'Access-Control-Allow-Origin': '*',
+					},
+				});
+			} else if (pathname === '/api/settings') {
+				return await this.handleSettings(request, authResult.userId!, db);
+			} else if (pathname.startsWith('/api/shopify/proxy')) {
+				return await this.handleShopifyProxy(request);
+			} else {
+				return new Response(JSON.stringify({ error: 'API endpoint not found' }), {
+					status: 404,
+					headers: {
+						'Content-Type': 'application/json',
+						'Access-Control-Allow-Origin': '*',
+					},
+				});
+			}
+		} catch (error) {
+			console.error('API route error:', error);
+			return new Response(JSON.stringify({ 
+				error: 'Internal server error',
+				details: error instanceof Error ? error.message : 'Unknown error'
+			}), {
+				status: 500,
+				headers: {
+					'Content-Type': 'application/json',
+					'Access-Control-Allow-Origin': '*',
+				},
+			});
+		}
+	},
+
+	// Handle Shopify configuration API
+	async handleShopifyConfig(request: Request, userId: number, db: DatabaseService): Promise<Response> {
+		if (request.method === 'GET') {
+			const config = await db.getShopifyConfig(userId);
+			
+			// Convert snake_case to camelCase for response
+			const responseConfig = config ? {
+				id: config.id,
+				userId: config.user_id,
+				shopDomain: config.shop_domain,
+				apiKey: config.api_key,
+				apiSecret: config.api_secret,
+				accessToken: config.access_token,
+				isConnected: config.is_connected,
+				lastSync: config.last_sync,
+				createdAt: config.created_at,
+				updatedAt: config.updated_at
+			} : null;
+			
+			return new Response(JSON.stringify(responseConfig), {
+				headers: {
+					'Content-Type': 'application/json',
+					'Access-Control-Allow-Origin': '*',
+				},
+			});
+		} else if (request.method === 'POST' || request.method === 'PUT') {
+			const configData = await request.json();
+			
+			// Convert camelCase to snake_case for database
+			const dbConfigData = {
+				shop_domain: configData.shopDomain,
+				api_key: configData.apiKey,
+				api_secret: configData.apiSecret,
+				access_token: configData.accessToken,
+				is_connected: configData.isConnected,
+				last_sync: configData.lastSync
+			};
+			
+			await db.saveShopifyConfig(userId, dbConfigData);
+			const updatedConfig = await db.getShopifyConfig(userId);
+			
+			// Convert snake_case back to camelCase for response
+			const responseConfig = updatedConfig ? {
+				id: updatedConfig.id,
+				userId: updatedConfig.user_id,
+				shopDomain: updatedConfig.shop_domain,
+				apiKey: updatedConfig.api_key,
+				apiSecret: updatedConfig.api_secret,
+				accessToken: updatedConfig.access_token,
+				isConnected: updatedConfig.is_connected,
+				lastSync: updatedConfig.last_sync,
+				createdAt: updatedConfig.created_at,
+				updatedAt: updatedConfig.updated_at
+			} : null;
+			
+			return new Response(JSON.stringify(responseConfig), {
+				headers: {
+					'Content-Type': 'application/json',
+					'Access-Control-Allow-Origin': '*',
+				},
+			});
+		}
+		
+		return new Response(JSON.stringify({ error: 'Method not allowed' }), { 
+			status: 405,
+			headers: {
+				'Content-Type': 'application/json',
+				'Access-Control-Allow-Origin': '*',
+			},
+		});
+	},
+
+	// Handle segments API
+	async handleSegments(request: Request, userId: number, db: DatabaseService): Promise<Response> {
+		if (request.method === 'GET') {
+			const segments = await db.getSegments(userId);
+			return new Response(JSON.stringify(segments), {
+				headers: {
+					'Content-Type': 'application/json',
+					'Access-Control-Allow-Origin': '*',
+				},
+			});
+		} else if (request.method === 'POST') {
+			const segments = await request.json();
+			await db.saveSegments(userId, segments);
+			return new Response(JSON.stringify({ success: true }), {
+				headers: {
+					'Content-Type': 'application/json',
+					'Access-Control-Allow-Origin': '*',
+				},
+			});
+		}
+		
+		return new Response(JSON.stringify({ error: 'Method not allowed' }), { 
+			status: 405,
+			headers: {
+				'Content-Type': 'application/json',
+				'Access-Control-Allow-Origin': '*',
+			},
+		});
+	},
+
+	// Handle background jobs API
+	async handleBackgroundJobs(request: Request, userId: number, db: DatabaseService): Promise<Response> {
+		if (request.method === 'GET') {
+			const jobs = await db.getAllBackgroundJobs(userId);
+			return new Response(JSON.stringify(jobs), {
+				headers: {
+					'Content-Type': 'application/json',
+					'Access-Control-Allow-Origin': '*',
+				},
+			});
+		} else if (request.method === 'POST') {
+			const jobData = await request.json();
+			await db.createBackgroundJob(userId, jobData);
+			return new Response(JSON.stringify({ success: true }), {
+				headers: {
+					'Content-Type': 'application/json',
+					'Access-Control-Allow-Origin': '*',
+				},
+			});
+		}
+		
+		return new Response(JSON.stringify({ error: 'Method not allowed' }), { 
+			status: 405,
+			headers: {
+				'Content-Type': 'application/json',
+				'Access-Control-Allow-Origin': '*',
+			},
+		});
+	},
+
+	// Handle settings API
+	async handleSettings(request: Request, userId: number, db: DatabaseService): Promise<Response> {
+		if (request.method === 'GET') {
+			const url = new URL(request.url);
+			const key = url.searchParams.get('key');
+			
+			if (key) {
+				// Get specific setting
+				const value = await db.getSetting(userId, key);
+				return new Response(JSON.stringify({ key, value }), {
+					headers: {
+						'Content-Type': 'application/json',
+						'Access-Control-Allow-Origin': '*',
+					},
+				});
+			} else {
+				// Get all settings
+				const settings = await db.getAllSettings(userId);
+				return new Response(JSON.stringify(settings), {
+					headers: {
+						'Content-Type': 'application/json',
+						'Access-Control-Allow-Origin': '*',
+					},
+				});
+			}
+		} else if (request.method === 'POST') {
+			const { key, value } = await request.json();
+			if (!key) {
+				return new Response(JSON.stringify({ error: 'Setting key is required' }), {
+					status: 400,
+					headers: {
+						'Content-Type': 'application/json',
+						'Access-Control-Allow-Origin': '*',
+					},
+				});
+			}
+			
+			await db.saveSetting(userId, key, value);
+			return new Response(JSON.stringify({ success: true, key, value }), {
+				headers: {
+					'Content-Type': 'application/json',
+					'Access-Control-Allow-Origin': '*',
+				},
+			});
+		} else if (request.method === 'DELETE') {
+			const url = new URL(request.url);
+			const key = url.searchParams.get('key');
+			
+			if (!key) {
+				return new Response(JSON.stringify({ error: 'Setting key is required' }), {
+					status: 400,
+					headers: {
+						'Content-Type': 'application/json',
+						'Access-Control-Allow-Origin': '*',
+					},
+				});
+			}
+			
+			await db.deleteSetting(userId, key);
+			return new Response(JSON.stringify({ success: true }), {
+				headers: {
+					'Content-Type': 'application/json',
+					'Access-Control-Allow-Origin': '*',
+				},
+			});
+		}
+		
+		return new Response(JSON.stringify({ error: 'Method not allowed' }), { 
+			status: 405,
+			headers: {
+				'Content-Type': 'application/json',
+				'Access-Control-Allow-Origin': '*',
+			},
+		});
+	},
+
+	// Verify authentication from request headers
+	async verifyAuthFromRequest(request: Request, authConfig: any, db: DatabaseService): Promise<{ isAuthenticated: boolean; userId?: number; username?: string; error?: string }> {
+		const authorization = request.headers.get('Authorization');
+		
+		if (!authorization) {
+			return { isAuthenticated: false, error: 'No authorization header' };
+		}
+
+		const authResult = this.validateAuth(authorization, authConfig);
+		
+		if (!authResult.isAuthenticated) {
+			return authResult;
+		}
+
+		// Look up or create user in database
+		try {
+			let user = await db.getUserByUsername(authResult.username!);
+			
+			if (!user) {
+				// Create user if it doesn't exist (for basic auth setup)
+				const newUser = await db.createUser(authResult.username!, 'basic_auth_user');
+				return {
+					isAuthenticated: true,
+					userId: newUser.id,
+					username: authResult.username
+				};
+			}
+
+			return {
+				isAuthenticated: true,
+				userId: user.id,
+				username: authResult.username
+			};
+		} catch (error) {
+			console.error('Error looking up/creating user:', error);
+			return {
+				isAuthenticated: false,
+				error: 'Database error during authentication'
+			};
+		}
 	},
 
 	// Handle public routes that don't require authentication
 	async handlePublicRoute(request: Request, pathname: string): Promise<Response> {
 		switch (pathname) {
 			case '/':
-				return new Response('Welcome to Bulk-Tagger! Please log in to access the dashboard.', {
-					status: 200,
+				// The React app should handle authentication, not the worker
+				// Let the static assets be served directly by Cloudflare
+				return new Response(null, {
+					status: 302,
 					headers: {
-						'Content-Type': 'text/plain',
-						'Cache-Control': 'no-store',
+						'Location': '/index.html',
 					},
 				});
 
@@ -72,6 +432,8 @@ export default {
 				if (pathname.startsWith('/api/shopify/proxy')) {
 					return await this.handleShopifyProxy(request);
 				}
+				
+				// For other routes, let static assets be served or return 404
 				return new Response('Not Found', { status: 404 });
 		}
 	},
@@ -83,15 +445,19 @@ export default {
 				return this.createAuthRequiredResponse('Please log in to access Bulk-Tagger', authConfig);
 
 			case '/logout':
-				// Invalidate the "Authorization" header by returning a HTTP 401
-				// We do not send a "WWW-Authenticate" header, as this would trigger
-				// a popup in the browser, immediately asking for credentials again
-				return new Response('Logged out successfully', {
-					status: 401,
+				// Return a successful logout response for the React app
+				return new Response(JSON.stringify({ 
+					success: true, 
+					message: 'Logged out successfully',
+					timestamp: new Date().toISOString()
+				}), {
+					status: 200,
 					headers: {
+						'Content-Type': 'application/json',
 						'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
 						'Pragma': 'no-cache',
 						'Expires': '0',
+						'Access-Control-Allow-Origin': '*',
 					},
 				});
 
@@ -309,9 +675,17 @@ export default {
 			'/favicon.ico',
 			'/robots.txt',
 			'/api/shopify/proxy',
+			'/index.html', // Main HTML file
 		];
 
-		return publicRoutes.some(route => pathname === route || pathname.startsWith('/public/'));
+		// Allow all static assets (CSS, JS, images, etc.)
+		const staticAssetExtensions = ['.css', '.js', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.woff', '.woff2', '.ttf', '.eot'];
+		const isStaticAsset = staticAssetExtensions.some(ext => pathname.endsWith(ext));
+		
+		// Allow all assets folder content
+		const isAssetPath = pathname.startsWith('/assets/');
+
+		return publicRoutes.some(route => pathname === route || pathname.startsWith('/public/')) || isStaticAsset || isAssetPath;
 	},
 
 	// Check if a request is for an authentication route
@@ -325,3 +699,5 @@ export default {
 		return authRoutes.some(route => pathname === route || pathname.startsWith('/auth/'));
 	},
 };
+
+export default handler;

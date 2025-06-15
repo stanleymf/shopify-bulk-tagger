@@ -15,11 +15,7 @@ export function Sidebar({ activeTab, onTabChange, onLogout }: SidebarProps) {
       label: 'Customer Segments',
       icon: Users
     },
-    {
-      id: 'rules',
-      label: 'Tagging Rules',
-      icon: Settings
-    },
+
     {
       id: 'monitoring',
       label: 'Real-time Monitoring',
