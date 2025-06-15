@@ -113,22 +113,7 @@ export function SegmentMonitoring() {
     }
   };
 
-  const handleStartMonitoring = async () => {
-    try {
-      await segmentMonitor.startMonitoring();
-      setIsMonitoring(true);
-      loadData();
-    } catch (error) {
-      console.error('Failed to start monitoring:', error);
-      alert('Failed to start monitoring. Please check your Shopify connection.');
-    }
-  };
 
-  const handleStopMonitoring = () => {
-    segmentMonitor.stopMonitoring();
-    setIsMonitoring(false);
-    loadData();
-  };
 
   const handleForceCheck = async () => {
     try {
@@ -257,8 +242,14 @@ export function SegmentMonitoring() {
         <div>
           <h1 className="text-2xl font-semibold text-gray-900">Real-time Segment Monitoring</h1>
           <p className="text-gray-600 mt-1">
-            Monitor customer segment changes and automatically apply tags based on rules
+            Automatically monitors customer segment changes and applies tags based on rules
           </p>
+          <div className="flex items-center mt-2 space-x-2">
+            <div className={`w-2 h-2 rounded-full ${isMonitoring ? 'bg-green-500' : 'bg-yellow-500'}`} />
+            <span className="text-sm text-gray-600">
+              {isMonitoring ? 'Background monitoring active' : 'Waiting for Shopify connection...'}
+            </span>
+          </div>
         </div>
         <div className="flex items-center gap-3">
           <Button
@@ -269,38 +260,44 @@ export function SegmentMonitoring() {
             <RefreshCw className="h-4 w-4 mr-2" />
             Force Check
           </Button>
-          {isMonitoring ? (
-            <Button onClick={handleStopMonitoring} variant="destructive">
-              <Pause className="h-4 w-4 mr-2" />
-              Stop Monitoring
-            </Button>
-          ) : (
-            <Button 
-              onClick={handleStartMonitoring}
-              className="bg-green-600 hover:bg-green-700"
-              disabled={!shopifyAPI.isInitialized()}
-            >
-              <Play className="h-4 w-4 mr-2" />
-              Start Monitoring
-            </Button>
-          )}
         </div>
       </div>
+
+      {/* Info Banner */}
+      {!isMonitoring && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div className="flex items-start space-x-3">
+            <div className="flex-shrink-0">
+              <div className="w-2 h-2 rounded-full bg-blue-500 mt-2"></div>
+            </div>
+            <div>
+              <h3 className="text-sm font-medium text-blue-900">Automatic Background Monitoring</h3>
+              <p className="text-sm text-blue-700 mt-1">
+                Monitoring will automatically start once your Shopify store is connected. 
+                No manual start/stop required - it runs continuously in the background.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Status Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-gray-600">Monitoring Status</CardTitle>
+            <CardTitle className="text-sm font-medium text-gray-600">Background Monitoring</CardTitle>
             <Activity className="h-4 w-4 text-gray-400" />
           </CardHeader>
           <CardContent>
             <div className="flex items-center space-x-2">
-              <div className={`w-2 h-2 rounded-full ${isMonitoring ? 'bg-green-500' : 'bg-gray-400'}`} />
+              <div className={`w-2 h-2 rounded-full ${isMonitoring ? 'bg-green-500' : 'bg-yellow-500'}`} />
               <span className="text-sm font-medium">
-                {isMonitoring ? 'Active' : 'Stopped'}
+                {isMonitoring ? 'Active' : 'Waiting'}
               </span>
             </div>
+            <p className="text-xs text-gray-500 mt-1">
+              {isMonitoring ? 'Checking every 30 seconds' : 'Will start when connected'}
+            </p>
           </CardContent>
         </Card>
 

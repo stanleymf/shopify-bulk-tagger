@@ -5,6 +5,25 @@ All notable changes to the Bulk-Tagger project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.0] - 2025-01-15
+
+### Added
+- **Automatic Background Monitoring**: Real-time segment monitoring now starts automatically when Shopify API is initialized
+- **Continuous Operation**: Monitoring runs continuously in the background without manual start/stop
+- **Auto-Recovery**: Monitoring automatically restarts if connection is lost and restored
+- **Enhanced UI**: Updated monitoring interface to reflect automatic operation with status indicators
+
+### Changed
+- **Simplified UX**: Removed manual start/stop buttons - monitoring is now fully automatic
+- **Background Processing**: Monitoring service initializes and runs independently of UI interactions
+- **Status Indicators**: Enhanced visual feedback showing monitoring state and connection status
+
+### Technical
+- Added initialization check interval to detect when Shopify API becomes available
+- Implemented auto-restart mechanism for robust continuous operation
+- Enhanced error handling and recovery for network interruptions
+- Updated monitoring service architecture for background operation
+
 ## [1.10.0] - 2025-01-15
 
 ### Removed

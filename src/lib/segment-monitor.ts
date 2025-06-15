@@ -2,10 +2,6 @@
 // Handles real-time monitoring of customer segment changes and triggers automated rules
 
 import { shopifyAPI, ShopifyCustomerSegment, ShopifyCustomer } from './shopify-api';
-
-// Import the class for static methods
-import './shopify-api';
-import { ruleExecutor } from './rule-executor';
 import { storage } from './storage';
 
 export interface SegmentChange {
@@ -48,9 +44,46 @@ class SegmentMonitoringService {
   private changeHistory: SegmentChange[] = [];
   private readonly MONITORING_INTERVAL = 30000; // 30 seconds
   private readonly MAX_HISTORY_SIZE = 1000;
+  private initializationCheckInterval: number | null = null;
 
   constructor() {
     this.loadStoredData();
+    this.startInitializationCheck();
+  }
+
+  // Check for Shopify API initialization and auto-start monitoring
+  private startInitializationCheck(): void {
+    // Check immediately if already initialized
+    if (shopifyAPI.isInitialized()) {
+      this.autoStartMonitoring();
+      return;
+    }
+
+    // Check every 5 seconds for initialization
+    this.initializationCheckInterval = setInterval(() => {
+      if (shopifyAPI.isInitialized()) {
+        this.autoStartMonitoring();
+        if (this.initializationCheckInterval) {
+          clearInterval(this.initializationCheckInterval);
+          this.initializationCheckInterval = null;
+        }
+      }
+    }, 5000);
+  }
+
+  // Automatically start monitoring when conditions are met
+  private async autoStartMonitoring(): Promise<void> {
+    try {
+      if (!this.isMonitoring && shopifyAPI.isInitialized()) {
+        console.log('🔄 Auto-starting background segment monitoring...');
+        await this.startMonitoring();
+        console.log('✅ Background segment monitoring is now active');
+      }
+    } catch (error) {
+      console.error('Failed to auto-start monitoring:', error);
+      // Retry after 30 seconds
+      setTimeout(() => this.autoStartMonitoring(), 30000);
+    }
   }
 
   // Load stored monitoring data
@@ -109,6 +142,12 @@ class SegmentMonitoringService {
         await this.checkForSegmentChanges();
       } catch (error) {
         console.error('Error during segment monitoring:', error);
+        // If API becomes uninitialized, stop monitoring and restart check
+        if (!shopifyAPI.isInitialized()) {
+          console.log('Shopify API no longer initialized, stopping monitoring');
+          this.stopMonitoring();
+          this.startInitializationCheck();
+        }
       }
     }, this.MONITORING_INTERVAL);
 
@@ -131,6 +170,18 @@ class SegmentMonitoringService {
 
     this.saveMonitoringData();
     console.log('Segment monitoring stopped');
+  }
+
+  // Permanently stop all monitoring (including auto-restart)
+  stopAllMonitoring(): void {
+    this.stopMonitoring();
+    
+    if (this.initializationCheckInterval) {
+      clearInterval(this.initializationCheckInterval);
+      this.initializationCheckInterval = null;
+    }
+    
+    console.log('All monitoring stopped (including auto-restart)');
   }
 
   // Take snapshots of all segments
