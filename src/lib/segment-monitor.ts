@@ -241,7 +241,7 @@ class SegmentMonitoringService {
           }
 
           // Compare with previous snapshot
-          const segmentChanges = this.detectSegmentChanges(
+          const segmentChanges = await this.detectSegmentChanges(
             previousSnapshot,
             currentCustomerIds,
             segment.name
@@ -277,11 +277,11 @@ class SegmentMonitoringService {
   }
 
   // Detect changes between snapshots
-  private detectSegmentChanges(
+  private async detectSegmentChanges(
     previousSnapshot: SegmentSnapshot,
     currentCustomerIds: string[],
     segmentName: string
-  ): SegmentChange[] {
+  ): Promise<SegmentChange[]> {
     const changes: SegmentChange[] = [];
     const previousIds = new Set(previousSnapshot.customerIds);
     const currentIds = new Set(currentCustomerIds);
@@ -289,9 +289,11 @@ class SegmentMonitoringService {
     // Find customers added to segment
     const addedCustomers = currentCustomerIds.filter(id => !previousIds.has(id));
     for (const customerId of addedCustomers) {
+      // For now, we'll populate email later to avoid too many API calls during monitoring
+      // The email will be fetched when the change is processed or displayed
       changes.push({
         customerId,
-        customerEmail: '', // Will be populated later if needed
+        customerEmail: '', // Will be populated when needed
         fromSegments: [],
         toSegments: [segmentName],
         timestamp: new Date().toISOString(),
@@ -302,9 +304,10 @@ class SegmentMonitoringService {
     // Find customers removed from segment
     const removedCustomers = previousSnapshot.customerIds.filter(id => !currentIds.has(id));
     for (const customerId of removedCustomers) {
+      // For now, we'll populate email later to avoid too many API calls during monitoring
       changes.push({
         customerId,
-        customerEmail: '', // Will be populated later if needed
+        customerEmail: '', // Will be populated when needed
         fromSegments: [segmentName],
         toSegments: [],
         timestamp: new Date().toISOString(),
@@ -313,6 +316,17 @@ class SegmentMonitoringService {
     }
 
     return changes;
+  }
+
+  // Get customer email by ID (lightweight version)
+  private async getCustomerEmailById(customerId: string): Promise<string | null> {
+    try {
+      const customer = await this.getCustomerById(customerId);
+      return customer?.email || null;
+    } catch (error) {
+      console.error(`Failed to get customer email for ${customerId}:`, error);
+      return null;
+    }
   }
 
   // Process segment changes and trigger rules
@@ -460,7 +474,28 @@ class SegmentMonitoringService {
 
   // Get change history
   getChangeHistory(limit: number = 100): SegmentChange[] {
-    return this.changeHistory.slice(-limit);
+    return this.changeHistory.slice(-limit).reverse();
+  }
+
+  // Get change history with customer emails populated
+  async getChangeHistoryWithEmails(limit: number = 100): Promise<SegmentChange[]> {
+    const changes = this.getChangeHistory(limit);
+    const enrichedChanges: SegmentChange[] = [];
+
+    for (const change of changes) {
+      if (!change.customerEmail) {
+        // Try to get customer email if not already populated
+        const customerEmail = await this.getCustomerEmailById(change.customerId);
+        enrichedChanges.push({
+          ...change,
+          customerEmail: customerEmail || 'Unknown'
+        });
+      } else {
+        enrichedChanges.push(change);
+      }
+    }
+
+    return enrichedChanges;
   }
 
   // Get monitoring status

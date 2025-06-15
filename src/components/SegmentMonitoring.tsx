@@ -220,7 +220,24 @@ export function SegmentMonitoring() {
   };
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleString();
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+    
+    if (diffInSeconds < 60) {
+      return 'Just now';
+    } else if (diffInSeconds < 3600) {
+      const minutes = Math.floor(diffInSeconds / 60);
+      return `${minutes}m ago`;
+    } else if (diffInSeconds < 86400) {
+      const hours = Math.floor(diffInSeconds / 3600);
+      return `${hours}h ago`;
+    } else if (diffInSeconds < 604800) {
+      const days = Math.floor(diffInSeconds / 86400);
+      return `${days}d ago`;
+    } else {
+      return date.toLocaleDateString();
+    }
   };
 
   const getTriggerDescription = (rule: MonitoringRule) => {
@@ -438,35 +455,73 @@ export function SegmentMonitoring() {
 
       {/* Recent Changes */}
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-lg font-medium text-gray-900">Recent Segment Changes</CardTitle>
+          <Badge variant="outline" className="text-xs">
+            {changeHistory.length} total changes
+          </Badge>
         </CardHeader>
         <CardContent>
           {changeHistory.length === 0 ? (
             <div className="text-center py-8">
               <Clock className="mx-auto h-8 w-8 text-gray-400 mb-2" />
               <p className="text-gray-600">No recent segment changes detected</p>
+              <p className="text-sm text-gray-500 mt-1">Changes will appear here when customers move between segments</p>
             </div>
           ) : (
-            <div className="space-y-3">
-              {changeHistory.slice(0, 10).map((change, index) => (
-                <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                  <div className="flex items-center space-x-3">
-                    <Badge variant={change.changeType === 'added' ? 'default' : 'secondary'}>
-                      {change.changeType}
-                    </Badge>
-                    <span className="text-sm">
-                      Customer {change.customerId.split('/').pop()}
-                    </span>
-                    <span className="text-sm text-gray-600">
-                      {change.changeType === 'added' ? 'joined' : 'left'} {change.toSegments[0] || change.fromSegments[0]}
-                    </span>
+            <div className="space-y-2 max-h-96 overflow-y-auto">
+              {changeHistory.slice(0, 50).map((change, index) => {
+                const customerId = change.customerId.split('/').pop() || change.customerId;
+                const segmentName = change.toSegments[0] || change.fromSegments[0];
+                const actionText = change.changeType === 'added' ? 'joined' : 'left';
+                const actionIcon = change.changeType === 'added' ? '→' : '←';
+                
+                return (
+                  <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                    <div className="flex items-center space-x-3 flex-1">
+                      <Badge 
+                        variant={change.changeType === 'added' ? 'default' : 'secondary'}
+                        className={change.changeType === 'added' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}
+                      >
+                        {change.changeType === 'added' ? 'Added' : 'Removed'}
+                      </Badge>
+                      
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center space-x-2">
+                          <span className="text-sm font-medium text-gray-900">
+                            Customer {customerId}
+                          </span>
+                          {change.customerEmail && change.customerEmail !== 'Unknown' && change.customerEmail !== '' && (
+                            <span className="text-sm text-gray-600">
+                              ({change.customerEmail})
+                            </span>
+                          )}
+                        </div>
+                        
+                        <div className="flex items-center space-x-2 mt-1">
+                          <span className="text-xs text-gray-500">{actionText}</span>
+                          <span className="text-xs font-mono text-gray-400">{actionIcon}</span>
+                          <span className="text-xs font-medium text-blue-600">{segmentName}</span>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="text-right">
+                      <span className="text-xs text-gray-500">
+                        {formatDate(change.timestamp)}
+                      </span>
+                    </div>
                   </div>
+                );
+              })}
+              
+              {changeHistory.length > 50 && (
+                <div className="text-center py-2">
                   <span className="text-xs text-gray-500">
-                    {formatDate(change.timestamp)}
+                    Showing latest 50 of {changeHistory.length} changes
                   </span>
                 </div>
-              ))}
+              )}
             </div>
           )}
         </CardContent>

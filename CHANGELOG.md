@@ -5,6 +5,22 @@ All notable changes to the Bulk-Tagger project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.1] - 2025-01-15
+
+### Enhanced
+- **Detailed Change Logs**: Enhanced Recent Segment Changes card with comprehensive customer information
+- **Customer Email Display**: Shows customer email addresses in change logs when available
+- **Improved Visual Design**: Better formatting with color-coded badges and action indicators
+- **Relative Timestamps**: User-friendly time display (e.g., "2m ago", "1h ago")
+- **Scrollable History**: Shows up to 50 recent changes with scroll capability
+- **Change Counter**: Displays total number of changes tracked
+
+### Technical
+- Optimized customer email fetching to avoid excessive API calls during monitoring
+- Added method to enrich change history with customer details on demand
+- Enhanced change detection with better data structure
+- Improved UI responsiveness and visual hierarchy
+
 ## [1.11.0] - 2025-01-15
 
 ### Added
