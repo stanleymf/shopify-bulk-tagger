@@ -11,6 +11,13 @@ export interface BackgroundJob {
     skipped: number;
     message: string;
   };
+  // Enhanced checkpoint system
+  checkpoint?: {
+    lastProcessedCustomerId?: string;
+    processedCustomerIds: string[];
+    batchIndex: number;
+    lastSaveTime: string;
+  };
   result?: {
     success: boolean;
     processedCount: number;
@@ -21,6 +28,13 @@ export interface BackgroundJob {
   endTime?: string;
   lastUpdate: string;
   isCancelled?: boolean; // Flag to signal cancellation to running operations
+  // Enhanced timeout and retry settings
+  settings?: {
+    batchSize: number;
+    saveInterval: number; // Save checkpoint every N customers
+    maxRetries: number;
+    timeoutMinutes: number;
+  };
 }
 
 class BackgroundJobsService {
@@ -43,7 +57,13 @@ class BackgroundJobsService {
     type: 'bulk_add_tags' | 'bulk_remove_tags',
     segmentId: number,
     segmentName: string,
-    tags: string[]
+    tags: string[],
+    settings?: {
+      batchSize?: number;
+      saveInterval?: number;
+      maxRetries?: number;
+      timeoutMinutes?: number;
+    }
   ): string {
     const jobId = this.generateJobId();
     const job: BackgroundJob = {
@@ -59,6 +79,17 @@ class BackgroundJobsService {
         skipped: 0,
         message: 'Initializing...'
       },
+      checkpoint: {
+        processedCustomerIds: [],
+        batchIndex: 0,
+        lastSaveTime: new Date().toISOString()
+      },
+      settings: {
+        batchSize: settings?.batchSize || 10,
+        saveInterval: settings?.saveInterval || 50, // Save every 50 customers
+        maxRetries: settings?.maxRetries || 3,
+        timeoutMinutes: settings?.timeoutMinutes || 30
+      },
       startTime: new Date().toISOString(),
       lastUpdate: new Date().toISOString()
     };
@@ -66,6 +97,13 @@ class BackgroundJobsService {
     this.jobs.set(jobId, job);
     this.activeJobId = jobId;
     this.saveJobsToStorage();
+
+    console.log(`🚀 Started background job ${jobId}:`, {
+      type: job.type,
+      segment: job.segmentName,
+      tags: job.tags,
+      settings: job.settings
+    });
 
     return jobId;
   }
@@ -122,6 +160,14 @@ class BackgroundJobsService {
     this.jobs.set(jobId, job);
     this.activeJobId = null;
     this.saveJobsToStorage();
+
+    console.log(`✅ Completed background job ${jobId}:`, {
+      success: result.success,
+      processed: result.processedCount,
+      skipped: result.skippedCount,
+      errors: result.errors.length,
+      duration: this.getJobDuration(job)
+    });
 
     // Notify progress callback
     const callback = this.progressCallbacks.get(jobId);
@@ -306,6 +352,11 @@ class BackgroundJobsService {
    */
   private loadJobsFromStorage(): void {
     try {
+      if (typeof localStorage === 'undefined') {
+        console.warn('localStorage not available, jobs will not persist');
+        return;
+      }
+      
       const stored = localStorage.getItem(BackgroundJobsService.STORAGE_KEY);
       if (stored) {
         const jobsArray: BackgroundJob[] = JSON.parse(stored);
@@ -315,9 +366,22 @@ class BackgroundJobsService {
         // Find active job
         const activeJob = jobsArray.find(job => job.status === 'running');
         this.activeJobId = activeJob?.id || null;
+        
+        if (activeJob) {
+          console.log('🔄 Restored active job from storage:', activeJob.id, activeJob.type);
+        }
+        
+        console.log(`📦 Loaded ${jobsArray.length} background jobs from storage`);
       }
     } catch (error) {
       console.error('Failed to load background jobs from storage:', error);
+      // Clear corrupted data
+      try {
+        localStorage.removeItem(BackgroundJobsService.STORAGE_KEY);
+        console.log('🧹 Cleared corrupted background jobs storage');
+      } catch (removeError) {
+        console.error('Failed to clear corrupted storage:', removeError);
+      }
     }
   }
 
@@ -326,6 +390,11 @@ class BackgroundJobsService {
    */
   private saveJobsToStorage(): void {
     try {
+      if (typeof localStorage === 'undefined') {
+        console.warn('localStorage not available, cannot save jobs');
+        return;
+      }
+      
       const jobsArray = Array.from(this.jobs.values());
       
       // Keep only the most recent jobs
@@ -334,6 +403,7 @@ class BackgroundJobsService {
         .slice(0, BackgroundJobsService.MAX_JOBS);
       
       localStorage.setItem(BackgroundJobsService.STORAGE_KEY, JSON.stringify(sortedJobs));
+      console.log(`💾 Saved ${sortedJobs.length} background jobs to storage`);
     } catch (error) {
       console.error('Failed to save background jobs to storage:', error);
     }
@@ -345,19 +415,22 @@ class BackgroundJobsService {
   private resumeActiveJob(): void {
     const activeJob = this.getActiveJob();
     if (activeJob && activeJob.status === 'running') {
-      // Check if job is stale (more than 5 minutes old without update)
-      const lastUpdate = new Date(activeJob.lastUpdate);
-      const now = new Date();
-      const timeDiff = now.getTime() - lastUpdate.getTime();
-      
-      if (timeDiff > 5 * 60 * 1000) { // 5 minutes
-        // Mark as failed due to timeout
+      // Check if job has completely timed out
+      if (this.hasJobTimedOut(activeJob.id)) {
+        // Mark as failed due to complete timeout
         this.completeJob(activeJob.id, {
           success: false,
           processedCount: activeJob.progress.current,
           skippedCount: activeJob.progress.skipped,
-          errors: ['Job timed out after page reload']
+          errors: [`Job timed out after ${activeJob.settings?.timeoutMinutes || 30} minutes`]
         });
+        return;
+      }
+
+      // Check if job needs resumption (stale but not completely timed out)
+      if (this.needsResumption(activeJob.id)) {
+        console.log(`🔄 Job ${activeJob.id} needs resumption after page reload`);
+        // Job will be resumed by the Dashboard component
       }
     }
   }
@@ -412,12 +485,14 @@ class BackgroundJobsService {
     const job = this.jobs.get(jobId);
     if (!job || job.status !== 'running') return false;
 
-    // Check if job is stale (more than 2 minutes old without update)
     const lastUpdate = new Date(job.lastUpdate);
     const now = new Date();
-    const timeDiff = now.getTime() - lastUpdate.getTime();
+    const timeDiffMinutes = (now.getTime() - lastUpdate.getTime()) / (1000 * 60);
     
-    return timeDiff > 2 * 60 * 1000; // 2 minutes
+    // Use job-specific timeout or default to 5 minutes
+    const timeoutMinutes = job.settings?.timeoutMinutes || 5;
+    
+    return timeDiffMinutes > Math.min(timeoutMinutes, 5); // Cap at 5 minutes for safety
   }
 
   /**
@@ -505,6 +580,118 @@ class BackgroundJobsService {
         skippedCount: job.progress.skipped,
         errors: [error instanceof Error ? error.message : 'Unknown error during job resumption']
       });
+    }
+  }
+
+  /**
+   * Save checkpoint for a job
+   */
+  saveCheckpoint(
+    jobId: string, 
+    lastProcessedCustomerId: string, 
+    processedCustomerIds: string[], 
+    batchIndex: number
+  ): void {
+    const job = this.jobs.get(jobId);
+    if (!job) return;
+
+    job.checkpoint = {
+      lastProcessedCustomerId,
+      processedCustomerIds: [...processedCustomerIds], // Create a copy
+      batchIndex,
+      lastSaveTime: new Date().toISOString()
+    };
+    
+    job.lastUpdate = new Date().toISOString();
+    this.jobs.set(jobId, job);
+    this.saveJobsToStorage();
+    
+    console.log(`💾 Checkpoint saved for job ${jobId}: ${processedCustomerIds.length} customers processed`);
+  }
+
+  /**
+   * Check if job should save checkpoint based on interval
+   */
+  shouldSaveCheckpoint(jobId: string, currentCount: number): boolean {
+    const job = this.jobs.get(jobId);
+    if (!job || !job.settings) return false;
+    
+    return currentCount % job.settings.saveInterval === 0;
+  }
+
+  /**
+   * Get customers that still need processing (for resumption)
+   */
+  getRemainingCustomers(jobId: string, allCustomerIds: string[]): string[] {
+    const job = this.jobs.get(jobId);
+    if (!job || !job.checkpoint) return allCustomerIds;
+    
+    const processedIds = new Set(job.checkpoint.processedCustomerIds);
+    return allCustomerIds.filter(id => !processedIds.has(id));
+  }
+
+  /**
+   * Check if job has timed out completely
+   */
+  hasJobTimedOut(jobId: string): boolean {
+    const job = this.jobs.get(jobId);
+    if (!job || job.status !== 'running') return false;
+
+    const startTime = new Date(job.startTime);
+    const now = new Date();
+    const totalMinutes = (now.getTime() - startTime.getTime()) / (1000 * 60);
+    
+    const maxMinutes = job.settings?.timeoutMinutes || 30;
+    return totalMinutes > maxMinutes;
+  }
+
+  /**
+   * Get job statistics for monitoring
+   */
+  getJobStats(jobId: string): {
+    duration: string;
+    rate: number; // customers per minute
+    eta: string; // estimated time remaining
+    checkpointAge: string;
+  } | null {
+    const job = this.jobs.get(jobId);
+    if (!job) return null;
+
+    const startTime = new Date(job.startTime);
+    const now = new Date();
+    const durationMs = now.getTime() - startTime.getTime();
+    const durationMinutes = durationMs / (1000 * 60);
+    
+    const rate = durationMinutes > 0 ? job.progress.current / durationMinutes : 0;
+    const remaining = job.progress.total - job.progress.current;
+    const etaMinutes = rate > 0 ? remaining / rate : 0;
+    
+    const checkpointTime = job.checkpoint?.lastSaveTime ? new Date(job.checkpoint.lastSaveTime) : startTime;
+    const checkpointAge = Math.floor((now.getTime() - checkpointTime.getTime()) / (1000 * 60));
+    
+    return {
+      duration: this.formatDuration(durationMs),
+      rate: Math.round(rate * 10) / 10,
+      eta: etaMinutes > 0 ? this.formatDuration(etaMinutes * 60 * 1000) : 'Unknown',
+      checkpointAge: `${checkpointAge}m ago`
+    };
+  }
+
+  /**
+   * Format duration in a human-readable way
+   */
+  private formatDuration(ms: number): string {
+    const minutes = Math.floor(ms / (1000 * 60));
+    const seconds = Math.floor((ms % (1000 * 60)) / 1000);
+    
+    if (minutes > 60) {
+      const hours = Math.floor(minutes / 60);
+      const remainingMinutes = minutes % 60;
+      return `${hours}h ${remainingMinutes}m`;
+    } else if (minutes > 0) {
+      return `${minutes}m ${seconds}s`;
+    } else {
+      return `${seconds}s`;
     }
   }
 }

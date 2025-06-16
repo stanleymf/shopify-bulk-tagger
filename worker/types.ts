@@ -42,4 +42,14 @@ declare global {
     batch<T = any>(statements: D1PreparedStatement[]): Promise<D1Result<T>[]>;
     dump(): Promise<ArrayBuffer>;
   }
+
+  interface ScheduledEvent {
+    cron: string;
+    scheduledTime: number;
+  }
+
+  interface ExecutionContext {
+    waitUntil(promise: Promise<any>): void;
+    passThroughOnException(): void;
+  }
 } 

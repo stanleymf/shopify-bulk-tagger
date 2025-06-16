@@ -42,6 +42,7 @@ class SegmentMonitoringService {
   private segmentSnapshots: Map<number, SegmentSnapshot> = new Map();
   private monitoringRules: MonitoringRule[] = [];
   private changeHistory: SegmentChange[] = [];
+  private monitoredSegmentIds: Set<number> = new Set(); // Segments to monitor
   private readonly MONITORING_INTERVAL = 30000; // 30 seconds
   private readonly MAX_HISTORY_SIZE = 1000;
   private initializationCheckInterval: number | null = null;
@@ -99,6 +100,9 @@ class SegmentMonitoringService {
       if (appData.changeHistory) {
         this.changeHistory = appData.changeHistory.slice(-this.MAX_HISTORY_SIZE);
       }
+      if (appData.monitoredSegmentIds) {
+        this.monitoredSegmentIds = new Set(appData.monitoredSegmentIds);
+      }
     } catch (error) {
       console.error('Failed to load monitoring data:', error);
     }
@@ -113,6 +117,7 @@ class SegmentMonitoringService {
         monitoringRules: this.monitoringRules,
         segmentSnapshots: Array.from(this.segmentSnapshots.entries()),
         changeHistory: this.changeHistory.slice(-this.MAX_HISTORY_SIZE),
+        monitoredSegmentIds: Array.from(this.monitoredSegmentIds),
       });
     } catch (error) {
       console.error('Failed to save monitoring data:', error);
@@ -184,14 +189,19 @@ class SegmentMonitoringService {
     console.log('All monitoring stopped (including auto-restart)');
   }
 
-  // Take snapshots of all segments
+  // Take snapshots of monitored segments
   private async takeSegmentSnapshots(): Promise<void> {
     try {
       const segments = await shopifyAPI.getCustomerSegments();
-      console.log(`Taking snapshots of ${segments.length} segments...`);
+      const segmentsToMonitor = this.monitoredSegmentIds.size > 0 
+        ? segments.filter(segment => this.monitoredSegmentIds.has(segment.id))
+        : []; // If no specific segments selected, monitor none
 
-      for (const segment of segments) {
+      console.log(`Taking snapshots of ${segmentsToMonitor.length} monitored segments (${this.monitoredSegmentIds.size > 0 ? 'selective' : 'none selected'})...`);
+
+      for (const segment of segmentsToMonitor) {
         try {
+          console.log(`📸 Taking snapshot for segment "${segment.name}" (ID: ${segment.id})...`);
           const customerIds = await shopifyAPI.getSegmentCustomerIds(segment.id, 30000);
           
           const snapshot: SegmentSnapshot = {
@@ -202,16 +212,22 @@ class SegmentMonitoringService {
           };
 
           this.segmentSnapshots.set(segment.id, snapshot);
-          console.log(`Snapshot taken for segment "${segment.name}": ${customerIds.length} customers`);
+          console.log(`✅ Snapshot taken for segment "${segment.name}": ${customerIds.length} customers`);
 
           // Add delay to respect rate limits
           await new Promise(resolve => setTimeout(resolve, 500));
         } catch (error) {
-          console.error(`Failed to take snapshot for segment ${segment.name}:`, error);
+          console.error(`❌ Failed to take snapshot for segment "${segment.name}":`, error);
+          
+          // If this segment can't be monitored, remove it from monitoring
+          if (error instanceof Error && error.message.includes('cannot be monitored')) {
+            console.warn(`🚫 Removing segment "${segment.name}" from monitoring due to incompatibility`);
+            this.monitoredSegmentIds.delete(segment.id);
+          }
         }
       }
 
-      console.log('Segment snapshots completed');
+      console.log(`📊 Segment snapshots completed for ${segmentsToMonitor.length} segments`);
     } catch (error) {
       console.error('Failed to take segment snapshots:', error);
       throw error;
@@ -222,15 +238,22 @@ class SegmentMonitoringService {
   private async checkForSegmentChanges(): Promise<void> {
     try {
       const segments = await shopifyAPI.getCustomerSegments();
-      const changes: SegmentChange[] = [];
+      const segmentsToCheck = this.monitoredSegmentIds.size > 0 
+        ? segments.filter(segment => this.monitoredSegmentIds.has(segment.id))
+        : []; // If no specific segments selected, monitor none
 
-      for (const segment of segments) {
+      const changes: SegmentChange[] = [];
+      console.log(`🔍 Checking ${segmentsToCheck.length} monitored segments for changes...`);
+
+      for (const segment of segmentsToCheck) {
         try {
+          console.log(`🔎 Checking segment "${segment.name}" (ID: ${segment.id}) for changes...`);
           const currentCustomerIds = await shopifyAPI.getSegmentCustomerIds(segment.id, 30000);
           const previousSnapshot = this.segmentSnapshots.get(segment.id);
 
           if (!previousSnapshot) {
             // First time seeing this segment, just take a snapshot
+            console.log(`📸 First time monitoring segment "${segment.name}", taking initial snapshot...`);
             this.segmentSnapshots.set(segment.id, {
               segmentId: segment.id,
               segmentName: segment.name,
@@ -247,7 +270,10 @@ class SegmentMonitoringService {
             segment.name
           );
 
-          changes.push(...segmentChanges);
+          if (segmentChanges.length > 0) {
+            console.log(`🔄 Found ${segmentChanges.length} changes in segment "${segment.name}"`);
+            changes.push(...segmentChanges);
+          }
 
           // Update snapshot
           this.segmentSnapshots.set(segment.id, {
@@ -260,14 +286,23 @@ class SegmentMonitoringService {
           // Add delay to respect rate limits
           await new Promise(resolve => setTimeout(resolve, 500));
         } catch (error) {
-          console.error(`Failed to check changes for segment ${segment.name}:`, error);
+          console.error(`❌ Failed to check changes for segment "${segment.name}":`, error);
+          
+          // If this segment can't be monitored, remove it from monitoring
+          if (error instanceof Error && error.message.includes('cannot be monitored')) {
+            console.warn(`🚫 Removing segment "${segment.name}" from monitoring due to incompatibility`);
+            this.monitoredSegmentIds.delete(segment.id);
+            this.segmentSnapshots.delete(segment.id);
+          }
         }
       }
 
       if (changes.length > 0) {
-        console.log(`Detected ${changes.length} segment changes`);
+        console.log(`🎯 Detected ${changes.length} total segment changes across all monitored segments`);
         this.changeHistory.push(...changes);
         await this.processSegmentChanges(changes);
+      } else {
+        console.log(`✅ No changes detected in ${segmentsToCheck.length} monitored segments`);
       }
 
       this.saveMonitoringData();
@@ -505,6 +540,8 @@ class SegmentMonitoringService {
     totalRules: number;
     lastCheck?: string;
     segmentCount: number;
+    monitoredSegmentIds: number[];
+    isSelectiveMonitoring: boolean;
   } {
     return {
       isMonitoring: this.isMonitoring,
@@ -514,6 +551,8 @@ class SegmentMonitoringService {
         Math.max(...Array.from(this.segmentSnapshots.values()).map(s => new Date(s.timestamp).getTime())).toString() : 
         undefined,
       segmentCount: this.segmentSnapshots.size,
+      monitoredSegmentIds: Array.from(this.monitoredSegmentIds),
+      isSelectiveMonitoring: this.monitoredSegmentIds.size > 0,
     };
   }
 
@@ -533,8 +572,97 @@ class SegmentMonitoringService {
     this.segmentSnapshots.clear();
     this.changeHistory = [];
     this.monitoringRules = [];
+    this.monitoredSegmentIds.clear();
     this.saveMonitoringData();
     console.log('Cleared all monitoring data');
+  }
+
+  // Segment selection methods
+  addSegmentToMonitoring(segmentId: number): void {
+    this.monitoredSegmentIds.add(segmentId);
+    this.saveMonitoringData();
+    console.log(`Added segment ${segmentId} to monitoring`);
+  }
+
+  removeSegmentFromMonitoring(segmentId: number): void {
+    this.monitoredSegmentIds.delete(segmentId);
+    // Also remove its snapshot since we're no longer monitoring it
+    this.segmentSnapshots.delete(segmentId);
+    this.saveMonitoringData();
+    console.log(`Removed segment ${segmentId} from monitoring`);
+  }
+
+  setMonitoredSegments(segmentIds: number[]): void {
+    this.monitoredSegmentIds = new Set(segmentIds);
+    // Remove snapshots for segments we're no longer monitoring
+    for (const [segmentId] of this.segmentSnapshots) {
+      if (!this.monitoredSegmentIds.has(segmentId)) {
+        this.segmentSnapshots.delete(segmentId);
+      }
+    }
+    this.saveMonitoringData();
+    console.log(`Set monitored segments to: ${segmentIds.join(', ')}`);
+  }
+
+  getMonitoredSegments(): number[] {
+    return Array.from(this.monitoredSegmentIds);
+  }
+
+  isSegmentMonitored(segmentId: number): boolean {
+    return this.monitoredSegmentIds.has(segmentId);
+  }
+
+  // Monitor all segments (add all segments to monitoring)
+  async monitorAllSegments(): Promise<void> {
+    try {
+      const segments = await shopifyAPI.getCustomerSegments();
+      this.monitoredSegmentIds = new Set(segments.map(s => s.id));
+      this.saveMonitoringData();
+      console.log(`Set to monitor all ${segments.length} segments`);
+    } catch (error) {
+      console.error('Failed to set monitor all segments:', error);
+      throw error;
+    }
+  }
+
+  // Check which segments can be monitored
+  async checkSegmentCompatibility(): Promise<{
+    compatible: Array<{ id: number; name: string; query?: string }>;
+    incompatible: Array<{ id: number; name: string; reason: string }>;
+  }> {
+    const segments = await shopifyAPI.getCustomerSegments();
+    const compatible: Array<{ id: number; name: string; query?: string }> = [];
+    const incompatible: Array<{ id: number; name: string; reason: string }> = [];
+
+    for (const segment of segments) {
+      try {
+        if (!segment.query) {
+          incompatible.push({
+            id: segment.id,
+            name: segment.name,
+            reason: 'No query defined - cannot determine segment criteria'
+          });
+          continue;
+        }
+
+        // Try to translate the query to see if it's supported
+        await shopifyAPI.getSegmentCustomerIds(segment.id, 1); // Just test with 1 customer
+        compatible.push({
+          id: segment.id,
+          name: segment.name,
+          query: segment.query
+        });
+      } catch (error) {
+        incompatible.push({
+          id: segment.id,
+          name: segment.name,
+          reason: error instanceof Error ? error.message : 'Unknown error'
+        });
+      }
+    }
+
+    console.log(`Segment compatibility check: ${compatible.length} compatible, ${incompatible.length} incompatible`);
+    return { compatible, incompatible };
   }
 }
 

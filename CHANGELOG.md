@@ -5,6 +5,200 @@ All notable changes to the Bulk-Tagger project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.14.1] - 2025-01-16
+
+### Fixed
+- **🔧 Local Browser Job Processing**: Fixed critical issues with client-side background jobs system
+- **Race Conditions**: Fixed race conditions in batch processing by changing from Promise.all() to sequential processing
+- **Progress Calculation**: Fixed inconsistent progress reporting and counter synchronization issues
+- **Storage Reliability**: Enhanced localStorage error handling with better availability checking and corruption recovery
+- **API Initialization**: Fixed async constructor timing issues in Shopify API service
+- **Cancellation Handling**: Improved job cancellation signal management and error recovery
+
+### Added
+- **🧪 Test Jobs System**: Added debug button to test background jobs functionality with simulated operations
+- **🔍 Debug API**: Added Shopify API connectivity and data access testing tools
+- **Enhanced Logging**: Comprehensive console logging for job lifecycle events and debugging
+- **Better Error Messages**: Improved error reporting with detailed progress feedback and recovery guidance
+
+### Technical Improvements
+- **Sequential Batch Processing**: Replaced concurrent Promise.all with sequential processing to prevent race conditions
+- **Enhanced Storage Management**: Better localStorage availability detection and graceful degradation
+- **Improved Progress Tracking**: Fixed progress counter synchronization in bulk tagging operations
+- **Robust Error Handling**: Enhanced error recovery mechanisms throughout the job processing pipeline
+
+### User Experience
+- **Reliable Local Processing**: Local browser job processing now works consistently without crashes
+- **Better Debugging**: Debug tools help users identify and resolve connectivity or permission issues
+- **Clearer Feedback**: Enhanced progress messages and error reporting for better user understanding
+- **Improved Stability**: Background jobs persist and resume correctly across page refreshes and interruptions
+
+## [1.14.0] - 2025-01-15
+
+### Added
+- **🚀 TRUE SERVER-SIDE BACKGROUND PROCESSING**: Revolutionary upgrade enabling bulk operations to continue even after closing browser/laptop
+- **☁️ Cloudflare Worker Job Processing**: Complete server-side job execution system with automatic queue management
+- **🔄 Independent Job Execution**: Jobs run entirely on the server without requiring active browser sessions
+- **⚡ Automatic Job Processing**: Scheduled cron triggers process queued jobs every few minutes
+- **📊 Advanced Job Management**: Full server-side job lifecycle with queuing, processing, monitoring, and completion
+- **🛡️ Enterprise-Grade Reliability**: Jobs survive browser crashes, network issues, laptop shutdowns, and power outages
+
+### Server-Side Processing Features
+- **Queue Management**: Jobs are queued on the server and processed independently
+- **Concurrent Processing**: Multiple jobs can run simultaneously with configurable limits
+- **Automatic Recovery**: Failed jobs are automatically retried with exponential backoff
+- **Real-time Progress**: Server updates job progress in database for client monitoring
+- **Resource Management**: Intelligent batching and rate limiting to respect Shopify API limits
+- **Persistent Storage**: All job data stored in Cloudflare D1 database for durability
+
+### Technical Implementation
+- **ShopifyServerAPI**: New server-side Shopify API client for direct server-to-Shopify communication
+- **JobProcessor**: Advanced job processing engine with concurrency control and error handling
+- **ServerJobsService**: Client-side service for interacting with server-side job system
+- **Database Extensions**: Enhanced schema to support server-side job management
+- **Scheduled Events**: Cloudflare Worker cron triggers for automatic job processing
+
+### Breaking Changes
+- **New Job Types**: Server jobs are separate from client-side background jobs
+- **Enhanced API**: New `/api/server-jobs` endpoints for server-side job management
+- **Database Schema**: Additional fields and tables for server-side job tracking
+
+### Migration Notes
+- Existing client-side background jobs continue to work as before
+- Server-side processing is opt-in and available alongside existing functionality
+- No data migration required - new features are additive
+
+## [1.13.0] - 2025-01-15
+
+### Added
+- **🕒 Scheduled Bulk Operations**: Complete scheduling system for recurring bulk tagging operations
+- **⏰ Multiple Schedule Types**: Support for interval, daily, weekly, and monthly schedules
+- **🎯 Precise Timing**: Schedule operations at specific times (e.g., daily at 09:00, weekly on Mondays)
+- **🔄 Automatic Execution**: Jobs run automatically in the background without manual intervention
+- **📊 Comprehensive Management**: Full CRUD operations for scheduled jobs with status tracking
+
+### Scheduled Jobs Features
+- **Flexible Scheduling**: 
+  - Interval-based (every N minutes)
+  - Daily at specific time (e.g., 09:00 every day)
+  - Weekly on specific day and time (e.g., Mondays at 09:00)
+  - Monthly on specific date and time (e.g., 1st of month at 09:00)
+- **Job Management**: Create, edit, delete, enable/disable scheduled jobs
+- **Status Monitoring**: Real-time status tracking with execution history
+- **Background Integration**: Uses existing background jobs system for reliable execution
+- **Timezone Support**: Respects user's local timezone for scheduling
+- **Manual Execution**: "Execute Now" option for testing and immediate runs
+
+### Enhanced User Interface
+- **Scheduled Jobs Dashboard**: Dedicated interface for managing all scheduled operations
+- **Status Cards**: Overview of total jobs, active jobs, next run time, and recent executions
+- **Job Table**: Comprehensive view of all jobs with status, schedule, and last execution
+- **Form Builder**: Intuitive form for creating and editing scheduled jobs
+- **Visual Indicators**: Status icons and badges for quick job status identification
+
+### Technical Implementation
+- **ScheduledJobsService**: New service class handling all scheduling logic
+- **Timer Management**: Efficient timer system with automatic rescheduling
+- **Persistent Storage**: Jobs persist across browser sessions and page refreshes
+- **Error Handling**: Robust error handling with result tracking and retry logic
+- **Integration**: Seamless integration with existing background jobs and Shopify API
+
+### Use Cases
+- **Daily Maintenance**: Tag new customers daily at 9 AM
+- **Weekly Campaigns**: Add campaign tags every Monday for weekly promotions
+- **Monthly Cleanup**: Remove expired tags on the first of each month
+- **Interval Processing**: Process high-volume segments every 30 minutes
+
+## [1.12.4] - 2025-01-15
+
+### Added
+- **🔄 Checkpoint-Based Resumption**: Enhanced background jobs with automatic checkpoint saving and smart resumption
+- **📊 Advanced Job Statistics**: Real-time processing rate, ETA, checkpoint age, and batch progress tracking
+- **⚙️ Fine-Tuned Settings**: Configurable batch sizes, save intervals, and timeouts based on operation size
+- **🛡️ Enhanced Resilience**: Better timeout handling and recovery from interruptions
+
+### Enhanced Background Processing
+- **Checkpoint System**: Automatically saves progress every N customers (configurable)
+- **Smart Resumption**: Resumes from last processed customer after page refresh or timeout
+- **Adaptive Settings**: Smaller batches and more frequent saves for large operations (>1000 customers)
+- **Memory of Progress**: Tracks processed customer IDs to avoid duplicate processing
+- **Granular Timeouts**: Job-specific timeout settings with graceful degradation
+
+### Improved User Experience
+- **Real-time Statistics**: Shows processing rate (customers/min) and estimated completion time
+- **Checkpoint Indicators**: Visual feedback showing when checkpoints are saved
+- **Enhanced Progress Display**: Batch progress, checkpoint age, and operation settings
+- **Better Error Recovery**: Operations can recover from network issues and continue processing
+
+### Technical Improvements
+- **Persistent State**: Enhanced job storage with checkpoint data
+- **Batch Management**: Improved batch processing with checkpoint integration
+- **Timeout Management**: Multiple timeout levels (stale detection vs complete timeout)
+- **Performance Optimization**: Configurable settings based on operation complexity
+
+## [1.12.3] - 2025-01-15
+
+### Changed
+- **BREAKING: Default Behavior**: Changed default state to start with no segments selected for monitoring
+- **Selective by Default**: By default, no segments are monitored until explicitly selected by the user
+- **Updated UI Messaging**: All interface text now reflects the new "no segments selected" default state
+- **Monitor All Button**: Now adds all segments to selective monitoring instead of clearing selection
+
+### Improved
+- **Clearer User Intent**: Users must explicitly choose which segments to monitor, making the system more predictable
+- **Better UX Flow**: Eliminates confusion about which segments are being monitored by default
+- **Intentional Monitoring**: Ensures users consciously select segments rather than accidentally monitoring everything
+
+## [1.12.2] - 2025-01-15
+
+### Fixed
+- **Segment Toggle Issue**: Fixed issue where segment toggles were disabled after using "Unselect All"
+- **Improved UX**: Segment toggles now work intuitively - clicking any toggle automatically enables selective monitoring
+- **Better State Management**: Eliminated the catch-22 situation where users couldn't select segments because they weren't in selective mode
+
+### Improved
+- **Automatic Mode Switching**: Clicking any segment toggle in "monitor all" mode automatically switches to selective monitoring
+- **Enhanced Feedback**: Added warning banner when no segments are selected in selective monitoring mode
+- **Clearer Instructions**: Updated help text to reflect the new intuitive toggle behavior
+
+## [1.12.1] - 2025-01-15
+
+### Added
+- **Segment Search**: Added search bar to filter segments by name or ID for easier navigation
+- **Unselect All Button**: Added "Unselect All" button to quickly deselect all monitored segments
+- **Enhanced Search UX**: Search bar includes search icon, clear button, and results summary
+- **Empty State Handling**: Better UI feedback when no segments match search criteria
+
+### Improved
+- **Segment Management**: Much easier to find and manage specific segments in large lists
+- **Visual Feedback**: Clear indication of search results and filtered segments
+- **User Experience**: Streamlined segment selection workflow with better controls
+
+## [1.12.0] - 2025-01-15
+
+### Added
+- **Selective Segment Monitoring**: Users can now choose which specific segments to monitor instead of monitoring all segments
+- **Segment Compatibility Checker**: New tool to check which segments can be monitored for real-time changes
+- **Enhanced Error Handling**: Better detection and handling of segments that cannot be monitored due to API limitations
+- **Improved UI**: Visual indicators for segment compatibility status (compatible/incompatible segments)
+- **Smart Monitoring**: Automatically removes incompatible segments from monitoring to prevent errors
+
+### Improved
+- **Change Detection Reliability**: Fixed issues where monitoring was not detecting changes properly by improving segment query translation
+- **Better Logging**: Enhanced console logging with emojis and clearer status messages for monitoring operations
+- **Error Recovery**: Monitoring service now gracefully handles segments that can't be monitored and continues with compatible ones
+
+### Technical Changes
+- Added `monitoredSegmentIds` field to track which segments are being monitored
+- Improved segment query translation with better error handling
+- Added segment compatibility checking functionality
+- Enhanced UI with compatibility status indicators and controls
+
+### Notes
+- Segments without specific queries cannot be monitored due to Shopify API limitations
+- Only segments with translatable query criteria can be monitored for real-time changes
+- The system will automatically identify and exclude incompatible segments
+
 ## [1.11.1] - 2025-01-15
 
 ### Enhanced

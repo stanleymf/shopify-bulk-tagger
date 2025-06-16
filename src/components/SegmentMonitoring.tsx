@@ -49,7 +49,8 @@ import {
   Users,
   Zap,
   RefreshCw,
-  AlertCircle
+  AlertCircle,
+  Search
 } from "lucide-react";
 import { segmentMonitor, MonitoringRule, SegmentChange } from "@/lib/segment-monitor";
 import { shopifyAPI } from "@/lib/shopify-api";
@@ -66,12 +67,19 @@ export function SegmentMonitoring() {
   const [isMonitoring, setIsMonitoring] = useState(false);
   const [monitoringRules, setMonitoringRules] = useState<MonitoringRule[]>([]);
   const [changeHistory, setChangeHistory] = useState<SegmentChange[]>([]);
-  const [segments, setSegments] = useState<Array<{ id: number; name: string }>>([]);
+  const [segments, setSegments] = useState<Array<{ id: number; name: string; query?: string }>>([]);
+  const [segmentCompatibility, setSegmentCompatibility] = useState<{
+    compatible: Array<{ id: number; name: string; query?: string }>;
+    incompatible: Array<{ id: number; name: string; reason: string }>;
+  } | null>(null);
+  const [segmentSearchQuery, setSegmentSearchQuery] = useState('');
   const [monitoringStatus, setMonitoringStatus] = useState({
     isMonitoring: false,
     activeRules: 0,
     totalRules: 0,
     segmentCount: 0,
+    monitoredSegmentIds: [] as number[],
+    isSelectiveMonitoring: false,
   });
 
   // Form state
@@ -194,6 +202,60 @@ export function SegmentMonitoring() {
       loadData();
     }
   };
+
+  const handleToggleSegmentMonitoring = (segmentId: number) => {
+    // If not in selective monitoring mode, automatically enable it by adding this segment
+    if (!monitoringStatus.isSelectiveMonitoring) {
+      // User is clicking to turn ON a segment, so add it to monitoring
+      segmentMonitor.addSegmentToMonitoring(segmentId);
+    } else {
+      // In selective monitoring mode, normal toggle behavior
+      if (segmentMonitor.isSegmentMonitored(segmentId)) {
+        segmentMonitor.removeSegmentFromMonitoring(segmentId);
+      } else {
+        segmentMonitor.addSegmentToMonitoring(segmentId);
+      }
+    }
+    loadData();
+  };
+
+  const handleMonitorAllSegments = async () => {
+    try {
+      await segmentMonitor.monitorAllSegments();
+      loadData();
+    } catch (error) {
+      console.error('Failed to monitor all segments:', error);
+      alert('Failed to monitor all segments. Please check your Shopify connection.');
+    }
+  };
+
+  const handleSelectAllSegments = () => {
+    const allSegmentIds = segments.map(s => s.id);
+    segmentMonitor.setMonitoredSegments(allSegmentIds);
+    loadData();
+  };
+
+  const handleUnselectAllSegments = () => {
+    // Set to selective monitoring mode with no segments selected
+    segmentMonitor.setMonitoredSegments([]);
+    loadData();
+  };
+
+  const handleCheckCompatibility = async () => {
+    try {
+      const compatibility = await segmentMonitor.checkSegmentCompatibility();
+      setSegmentCompatibility(compatibility);
+    } catch (error) {
+      console.error('Failed to check segment compatibility:', error);
+      alert('Failed to check segment compatibility. Please check your Shopify connection.');
+    }
+  };
+
+  // Filter segments based on search query
+  const filteredSegments = segments.filter(segment => 
+    segment.name.toLowerCase().includes(segmentSearchQuery.toLowerCase()) ||
+    segment.id.toString().includes(segmentSearchQuery)
+  );
 
   const addAction = () => {
     const newId = `action-${Date.now()}`;
@@ -354,6 +416,186 @@ export function SegmentMonitoring() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Segment Selection */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div>
+            <CardTitle className="text-lg font-medium text-gray-900">Segment Selection</CardTitle>
+            <p className="text-sm text-gray-600 mt-1">
+              Choose which segments to monitor for changes. 
+              {monitoringStatus.isSelectiveMonitoring 
+                ? `Currently monitoring ${monitoringStatus.monitoredSegmentIds.length} specific segments.`
+                : 'No segments selected for monitoring.'
+              }
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <Button 
+              onClick={handleCheckCompatibility} 
+              variant="outline" 
+              size="sm"
+              disabled={segments.length === 0}
+            >
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Check Compatibility
+            </Button>
+            <Button 
+              onClick={handleSelectAllSegments} 
+              variant="outline" 
+              size="sm"
+              disabled={segments.length === 0}
+            >
+              Select All
+            </Button>
+            <Button 
+              onClick={handleUnselectAllSegments} 
+              variant="outline" 
+              size="sm"
+              disabled={segments.length === 0}
+            >
+              Unselect All
+            </Button>
+            <Button 
+              onClick={handleMonitorAllSegments} 
+              variant="outline" 
+              size="sm"
+            >
+              Monitor All
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {segments.length === 0 ? (
+            <div className="text-center py-8">
+              <Users className="mx-auto h-8 w-8 text-gray-400 mb-2" />
+              <p className="text-gray-600">No segments found. Connect your Shopify store to see segments.</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {/* Search Bar */}
+              <div className="flex items-center space-x-2">
+                <div className="flex-1 relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <Input
+                    placeholder="Search segments by name or ID..."
+                    value={segmentSearchQuery}
+                    onChange={(e) => setSegmentSearchQuery(e.target.value)}
+                    className="w-full pl-10"
+                  />
+                </div>
+                {segmentSearchQuery && (
+                  <Button
+                    onClick={() => setSegmentSearchQuery('')}
+                    variant="outline"
+                    size="sm"
+                  >
+                    Clear
+                  </Button>
+                )}
+              </div>
+
+              {/* Results Summary */}
+              {segmentSearchQuery && (
+                <div className="text-sm text-gray-600">
+                  Showing {filteredSegments.length} of {segments.length} segments
+                  {filteredSegments.length === 0 && (
+                    <span className="text-red-600 ml-2">No segments match your search</span>
+                  )}
+                </div>
+              )}
+
+              {/* Segments Grid */}
+              {filteredSegments.length === 0 && segmentSearchQuery ? (
+                <div className="text-center py-8">
+                  <Search className="mx-auto h-8 w-8 text-gray-400 mb-2" />
+                  <p className="text-gray-600 mb-2">No segments found matching "{segmentSearchQuery}"</p>
+                  <Button
+                    onClick={() => setSegmentSearchQuery('')}
+                    variant="outline"
+                    size="sm"
+                  >
+                    Clear search
+                  </Button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {filteredSegments.map((segment) => {
+                  const isMonitored = monitoringStatus.isSelectiveMonitoring 
+                    ? monitoringStatus.monitoredSegmentIds.includes(segment.id)
+                    : false; // If not selective, none are monitored by default
+                  
+                  const compatibilityInfo = segmentCompatibility 
+                    ? segmentCompatibility.compatible.find(c => c.id === segment.id) ||
+                      segmentCompatibility.incompatible.find(i => i.id === segment.id)
+                    : null;
+                  
+                  const isCompatible = segmentCompatibility 
+                    ? segmentCompatibility.compatible.some(c => c.id === segment.id)
+                    : null; // null means not checked yet
+                  
+                  return (
+                    <div 
+                      key={segment.id} 
+                      className={`flex items-center justify-between p-3 border rounded-lg transition-colors ${
+                        isCompatible === false 
+                          ? 'border-red-200 bg-red-50' 
+                          : isMonitored 
+                            ? 'border-blue-200 bg-blue-50' 
+                            : 'border-gray-200 bg-gray-50'
+                      }`}
+                    >
+                      <div className="flex items-center space-x-3">
+                        <div className={`w-2 h-2 rounded-full ${
+                          isCompatible === false 
+                            ? 'bg-red-500' 
+                            : isMonitored 
+                              ? 'bg-blue-500' 
+                              : 'bg-gray-400'
+                        }`} />
+                        <div className="flex-1">
+                          <p className="font-medium text-sm text-gray-900">{segment.name}</p>
+                          <p className="text-xs text-gray-500">ID: {segment.id}</p>
+                          {isCompatible === false && compatibilityInfo && 'reason' in compatibilityInfo && (
+                            <p className="text-xs text-red-600 mt-1">
+                              ⚠️ {compatibilityInfo.reason}
+                            </p>
+                          )}
+                          {isCompatible === true && segment.query && (
+                            <p className="text-xs text-green-600 mt-1">
+                              ✅ Compatible for monitoring
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      <Switch
+                        checked={isMonitored}
+                        onCheckedChange={() => handleToggleSegmentMonitoring(segment.id)}
+                        disabled={isCompatible === false}
+                      />
+                    </div>
+                  );
+                  })}
+                </div>
+              )}
+              
+              {(!monitoringStatus.isSelectiveMonitoring || monitoringStatus.monitoredSegmentIds.length === 0) && (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mt-4">
+                  <div className="flex items-start space-x-2">
+                    <div className="w-2 h-2 rounded-full bg-yellow-500 mt-1.5"></div>
+                    <div>
+                      <p className="text-sm font-medium text-yellow-900">No Segments Selected</p>
+                      <p className="text-xs text-yellow-700 mt-1">
+                        No segments are currently being monitored. Click on segment toggles to select which segments to monitor, or use "Select All" to monitor all segments.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Monitoring Rules */}
       <Card>

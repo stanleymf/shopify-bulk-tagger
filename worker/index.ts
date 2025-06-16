@@ -2,6 +2,7 @@
 // Server-side storage for Bulk-Tagger application
 
 import { DatabaseService } from './database';
+import { JobProcessor, queueServerJob } from './job-processor';
 import type { D1Database } from './types';
 
 interface Env {
@@ -11,6 +12,9 @@ interface Env {
 	DB: D1Database; // D1 database binding
 }
 
+// Global job processor instance
+let jobProcessor: JobProcessor | null = null;
+
 const handler = {
 	async fetch(request: Request, env: Env): Promise<Response> {
 		const url = new URL(request.url);
@@ -18,6 +22,11 @@ const handler = {
 
 		// Initialize database service
 		const db = new DatabaseService(env.DB);
+
+		// Initialize job processor if not already done
+		if (!jobProcessor) {
+			jobProcessor = new JobProcessor(db);
+		}
 
 		// Define authentication configuration
 		const authConfig = {
@@ -53,6 +62,7 @@ const handler = {
 
 	// Handle API routes with authentication
 	async handleAPIRoute(request: Request, pathname: string, authConfig: any, db: DatabaseService): Promise<Response> {
+		console.log(`🚨 API ROUTE CALLED: ${request.method} ${pathname}`);
 		// Handle CORS preflight
 		if (request.method === 'OPTIONS') {
 			return new Response(null, {
@@ -101,6 +111,13 @@ const handler = {
 				return await this.handleSegments(request, authResult.userId!, db);
 			} else if (pathname === '/api/background-jobs') {
 				return await this.handleBackgroundJobs(request, authResult.userId!, db);
+			} else if (pathname === '/api/server-jobs') {
+				return await this.handleServerJobs(request, authResult.userId!, db);
+			} else if (pathname === '/api/server-jobs/process') {
+				return await this.handleProcessJobs(request, authResult.userId!, db);
+			} else if (pathname.startsWith('/api/server-jobs/') && pathname.endsWith('/cancel')) {
+				const jobId = pathname.split('/')[3]; // Extract job ID from path
+				return await this.handleCancelJob(request, authResult.userId!, jobId, db);
 			} else if (pathname === '/api/auth/test') {
 				// Authentication test endpoint for React app
 				return new Response(JSON.stringify({ 
@@ -140,6 +157,221 @@ const handler = {
 				},
 			});
 		}
+	},
+
+	// Handle server-side jobs API
+	async handleServerJobs(request: Request, userId: number, db: DatabaseService): Promise<Response> {
+		if (request.method === 'GET') {
+			// Get all jobs for user
+			const jobs = await db.getAllBackgroundJobs(userId);
+			return new Response(JSON.stringify(jobs), {
+				headers: {
+					'Content-Type': 'application/json',
+					'Access-Control-Allow-Origin': '*',
+				},
+			});
+		} else if (request.method === 'POST') {
+			try {
+				// Queue a new server-side job
+				const jobData = await request.json();
+				console.log('Queueing server job:', { userId, jobData });
+				
+				const jobId = await queueServerJob(
+					db,
+					userId,
+					jobData.type,
+					jobData.segmentId,
+					jobData.segmentName,
+					jobData.tags
+				);
+				
+				console.log('Server job queued successfully:', jobId);
+				
+				return new Response(JSON.stringify({ 
+					success: true, 
+					jobId,
+					message: 'Job queued for server-side processing'
+				}), {
+					headers: {
+						'Content-Type': 'application/json',
+						'Access-Control-Allow-Origin': '*',
+					},
+				});
+			} catch (error) {
+				console.error('Error queueing server job:', error);
+				return new Response(JSON.stringify({ 
+					error: 'Failed to queue server job',
+					details: error instanceof Error ? error.message : 'Unknown error'
+				}), {
+					status: 500,
+					headers: {
+						'Content-Type': 'application/json',
+						'Access-Control-Allow-Origin': '*',
+					},
+				});
+			}
+		}
+		
+		return new Response(JSON.stringify({ error: 'Method not allowed' }), { 
+			status: 405,
+			headers: {
+				'Content-Type': 'application/json',
+				'Access-Control-Allow-Origin': '*',
+			},
+		});
+	},
+
+	// Handle job processing trigger
+	async handleProcessJobs(request: Request, userId: number, db: DatabaseService): Promise<Response> {
+		console.log(`🚨 CRITICAL TEST: handleProcessJobs method called for user ${userId}`);
+		if (request.method === 'POST') {
+			try {
+				console.log(`🔧 handleProcessJobs called for user ${userId}`);
+				
+				if (!jobProcessor) {
+					console.log(`🔧 Creating new JobProcessor instance`);
+					jobProcessor = new JobProcessor(db);
+					console.log(`✅ JobProcessor instance created successfully`);
+				} else {
+					console.log(`🔧 Using existing JobProcessor instance`);
+				}
+
+				console.log(`🔧 About to call processUserJobs for user ${userId}`);
+				
+				// Add specific error handling around processUserJobs
+				try {
+					await jobProcessor.processUserJobs(userId);
+					console.log(`✅ processUserJobs completed successfully for user ${userId}`);
+				} catch (processError) {
+					console.error(`💥 CRITICAL ERROR in processUserJobs for user ${userId}:`, processError);
+					console.error(`💥 Error name: ${processError instanceof Error ? processError.name : 'Unknown'}`);
+					console.error(`💥 Error message: ${processError instanceof Error ? processError.message : String(processError)}`);
+					console.error(`💥 Error stack: ${processError instanceof Error ? processError.stack : 'No stack trace'}`);
+					throw processError; // Re-throw to be caught by outer try-catch
+				}
+				
+				const stats = jobProcessor.getStats();
+				console.log(`🔧 Job processor stats:`, stats);
+				
+				return new Response(JSON.stringify({ 
+					success: true,
+					message: 'Job processing triggered - VERSION 2.0',
+					stats,
+					debug: {
+						userId,
+						timestamp: new Date().toISOString(),
+						methodCalled: 'handleProcessJobs',
+						processUserJobsCalled: true,
+						version: '2.0'
+					}
+				}), {
+					headers: {
+						'Content-Type': 'application/json',
+						'Access-Control-Allow-Origin': '*',
+					},
+				});
+			} catch (error) {
+				console.error(`💥 Error in handleProcessJobs for user ${userId}:`, error);
+				return new Response(JSON.stringify({ 
+					error: 'Failed to process jobs',
+					details: error instanceof Error ? error.message : 'Unknown error'
+				}), {
+					status: 500,
+					headers: {
+						'Content-Type': 'application/json',
+						'Access-Control-Allow-Origin': '*',
+					},
+				});
+			}
+		}
+		
+		return new Response(JSON.stringify({ error: 'Method not allowed' }), { 
+			status: 405,
+			headers: {
+				'Content-Type': 'application/json',
+				'Access-Control-Allow-Origin': '*',
+			},
+		});
+	},
+
+	// Handle job cancellation
+	async handleCancelJob(request: Request, userId: number, jobId: string, db: DatabaseService): Promise<Response> {
+		if (request.method === 'POST') {
+			try {
+				// Get the job to verify it belongs to this user
+				const job = await db.getBackgroundJob(userId, jobId);
+				if (!job) {
+					return new Response(JSON.stringify({ 
+						error: 'Job not found',
+						message: 'The specified job does not exist or does not belong to you'
+					}), {
+						status: 404,
+						headers: {
+							'Content-Type': 'application/json',
+							'Access-Control-Allow-Origin': '*',
+						},
+					});
+				}
+
+				// Check if job can be cancelled
+				if (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled') {
+					return new Response(JSON.stringify({ 
+						error: 'Cannot cancel job',
+						message: `Job is already ${job.status} and cannot be cancelled`
+					}), {
+						status: 400,
+						headers: {
+							'Content-Type': 'application/json',
+							'Access-Control-Allow-Origin': '*',
+						},
+					});
+				}
+
+				// Cancel the job
+				await db.updateBackgroundJob(userId, jobId, {
+					status: 'cancelled',
+					end_time: new Date().toISOString(),
+					last_update: new Date().toISOString()
+				});
+
+				// If there's an active job processor, cancel the job there too
+				if (jobProcessor) {
+					await jobProcessor.cancelJob(jobId);
+				}
+
+				console.log(`🚫 Cancelled job ${jobId} for user ${userId}`);
+				
+				return new Response(JSON.stringify({ 
+					success: true,
+					message: 'Job cancelled successfully'
+				}), {
+					headers: {
+						'Content-Type': 'application/json',
+						'Access-Control-Allow-Origin': '*',
+					},
+				});
+			} catch (error) {
+				console.error('Error cancelling job:', error);
+				return new Response(JSON.stringify({ 
+					error: 'Failed to cancel job',
+					details: error instanceof Error ? error.message : 'Unknown error'
+				}), {
+					status: 500,
+					headers: {
+						'Content-Type': 'application/json',
+						'Access-Control-Allow-Origin': '*',
+					},
+				});
+			}
+		}
+		
+		return new Response(JSON.stringify({ error: 'Method not allowed' }), { 
+			status: 405,
+			headers: {
+				'Content-Type': 'application/json',
+				'Access-Control-Allow-Origin': '*',
+			},
+		});
 	},
 
 	// Handle Shopify configuration API
@@ -698,6 +930,26 @@ const handler = {
 
 		return authRoutes.some(route => pathname === route || pathname.startsWith('/auth/'));
 	},
+
+	// Handle scheduled events (cron triggers)
+	async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
+		console.log('🕐 Scheduled event triggered:', event.cron);
+		
+		try {
+			const db = new DatabaseService(env.DB);
+			
+			if (!jobProcessor) {
+				jobProcessor = new JobProcessor(db);
+			}
+
+			// Process all pending jobs for all users
+			await jobProcessor.processAllPendingJobs();
+			
+			console.log('✅ Scheduled job processing completed');
+		} catch (error) {
+			console.error('❌ Scheduled job processing failed:', error);
+		}
+	}
 };
 
 export default handler;

@@ -39,7 +39,7 @@ export interface BackgroundJob {
   id: string;
   user_id: number;
   type: 'bulk_add_tags' | 'bulk_remove_tags';
-  status: 'running' | 'completed' | 'failed' | 'paused' | 'cancelled';
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'paused' | 'cancelled';
   segment_id: number;
   segment_name: string;
   tags: string[]; // Will be JSON stringified in DB
@@ -130,6 +130,16 @@ export class DatabaseService {
       FROM users 
       WHERE id = ?
     `).bind(userId).first<User>();
+  }
+
+  async getAllUsers(): Promise<User[]> {
+    const result = await this.db.prepare(`
+      SELECT id, username, created_at, updated_at 
+      FROM users 
+      ORDER BY created_at ASC
+    `).all<User>();
+    
+    return result.results || [];
   }
 
   // Shopify configuration management
@@ -272,54 +282,136 @@ export class DatabaseService {
   }
 
   async updateBackgroundJob(userId: number, jobId: string, updates: Partial<BackgroundJob>): Promise<BackgroundJob> {
+    console.log(`🔧 updateBackgroundJob called for job ${jobId} with updates:`, JSON.stringify(updates, null, 2));
+    
     const job = await this.getBackgroundJob(userId, jobId);
-    if (!job) throw new Error('Job not found');
+    if (!job) {
+      console.log(`❌ Job ${jobId} not found for user ${userId}`);
+      throw new Error('Job not found');
+    }
+    
+    console.log(`📋 Current job state:`, JSON.stringify(job, null, 2));
 
-    const result = await this.db.prepare(`
-      UPDATE background_jobs 
-      SET status = ?, progress_current = ?, progress_total = ?, progress_skipped = ?,
-          progress_message = ?, result_success = ?, result_processed_count = ?, 
-          result_skipped_count = ?, result_errors = ?, end_time = ?, 
-          last_update = CURRENT_TIMESTAMP, is_cancelled = ?
-      WHERE user_id = ? AND id = ?
-      RETURNING *
-    `).bind(
-      updates.status || job.status,
-      updates.progress?.current ?? job.progress.current,
-      updates.progress?.total ?? job.progress.total,
-      updates.progress?.skipped ?? job.progress.skipped,
-      updates.progress?.message || job.progress.message,
-      updates.result?.success ?? job.result?.success,
-      updates.result?.processedCount ?? job.result?.processedCount,
-      updates.result?.skippedCount ?? job.result?.skippedCount,
-      updates.result?.errors ? JSON.stringify(updates.result.errors) : (job.result?.errors ? JSON.stringify(job.result.errors) : null),
-      updates.end_time || job.end_time,
-      updates.is_cancelled ?? job.is_cancelled,
-      userId,
-      jobId
-    ).first();
+    // Use a simpler approach - merge updates with existing job data
+    const updatedJob = { ...job, ...updates };
+    
+    // Handle nested progress object properly
+    if (updates.progress) {
+      updatedJob.progress = { ...job.progress, ...updates.progress };
+    }
+    
+    // Handle nested result object properly
+    if (updates.result) {
+      updatedJob.result = updates.result;
+    }
 
-    if (!result) throw new Error('Failed to update background job');
-    return this.mapJobFromDB(result);
+    console.log(`🔄 About to update job with data:`, JSON.stringify(updatedJob, null, 2));
+
+    try {
+      const result = await this.db.prepare(`
+        UPDATE background_jobs 
+        SET status = ?, progress_current = ?, progress_total = ?, progress_skipped = ?,
+            progress_message = ?, result_success = ?, result_processed_count = ?, 
+            result_skipped_count = ?, result_errors = ?, end_time = ?, 
+            last_update = CURRENT_TIMESTAMP, is_cancelled = ?
+        WHERE user_id = ? AND id = ?
+        RETURNING *
+      `).bind(
+        updatedJob.status,
+        updatedJob.progress.current,
+        updatedJob.progress.total,
+        updatedJob.progress.skipped,
+        updatedJob.progress.message,
+        updatedJob.result?.success ?? null,
+        updatedJob.result?.processedCount ?? null,
+        updatedJob.result?.skippedCount ?? null,
+        updatedJob.result?.errors ? JSON.stringify(updatedJob.result.errors) : null,
+        updatedJob.end_time ?? null,
+        updatedJob.is_cancelled,
+        userId,
+        jobId
+      ).first();
+
+      console.log(`💾 Database update result:`, result ? 'SUCCESS' : 'NO RESULT');
+      
+      if (!result) {
+        console.log(`❌ Database update returned no result for job ${jobId}`);
+        throw new Error('Failed to update background job');
+      }
+      
+      const mappedResult = this.mapJobFromDB(result);
+      console.log(`✅ Successfully updated job ${jobId} to status: ${mappedResult.status}`);
+      return mappedResult;
+      
+    } catch (error) {
+      console.log(`💥 Database update error for job ${jobId}:`, error);
+      throw error;
+    }
   }
 
   async getBackgroundJob(userId: number, jobId: string): Promise<BackgroundJob | null> {
-    const result = await this.db.prepare(`
-      SELECT * FROM background_jobs WHERE user_id = ? AND id = ?
-    `).bind(userId, jobId).first();
+    console.log(`🔍 getBackgroundJob called for user ${userId}, job ${jobId}`);
+    
+    try {
+      const result = await this.db.prepare(`
+        SELECT * FROM background_jobs WHERE user_id = ? AND id = ?
+      `).bind(userId, jobId).first();
 
-    return result ? this.mapJobFromDB(result) : null;
+      console.log(`🔍 getBackgroundJob result:`, result ? 'FOUND' : 'NOT FOUND');
+      if (result) {
+        console.log(`🔍 Raw job data:`, result);
+      }
+
+      return result ? this.mapJobFromDB(result) : null;
+    } catch (error) {
+      console.error(`💥 CRITICAL ERROR in getBackgroundJob:`, error);
+      console.error(`💥 Error details:`, {
+        name: error instanceof Error ? error.name : 'Unknown',
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : 'No stack trace'
+      });
+      throw error;
+    }
   }
 
   async getAllBackgroundJobs(userId: number): Promise<BackgroundJob[]> {
-    const result = await this.db.prepare(`
-      SELECT * FROM background_jobs 
-      WHERE user_id = ? 
-      ORDER BY start_time DESC 
-      LIMIT 10
-    `).bind(userId).all();
-
-    return (result.results || []).map(job => this.mapJobFromDB(job));
+    console.log(`🔍 getAllBackgroundJobs called for user ${userId}`);
+    
+    try {
+      const result = await this.db.prepare(`
+        SELECT * FROM background_jobs 
+        WHERE user_id = ? 
+        ORDER BY start_time DESC 
+        LIMIT 10
+      `).bind(userId).all();
+      
+      console.log(`🔍 Database query result:`, {
+        success: result.success,
+        resultsLength: result.results?.length || 0,
+        error: result.error
+      });
+      
+      if (!result.results) {
+        console.log(`🔍 No results returned from database`);
+        return [];
+      }
+      
+      console.log(`🔍 Raw database results (first 2):`, result.results.slice(0, 2));
+      
+      const mappedJobs = result.results.map(job => this.mapJobFromDB(job));
+      console.log(`🔍 Mapped ${mappedJobs.length} jobs successfully`);
+      console.log(`🔍 First mapped job:`, mappedJobs[0]);
+      
+      return mappedJobs;
+    } catch (error) {
+      console.error(`💥 CRITICAL ERROR in getAllBackgroundJobs:`, error);
+      console.error(`💥 Error details:`, {
+        name: error instanceof Error ? error.name : 'Unknown',
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : 'No stack trace'
+      });
+      throw error;
+    }
   }
 
   async getActiveBackgroundJob(userId: number): Promise<BackgroundJob | null> {

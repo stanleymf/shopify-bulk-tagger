@@ -21,6 +21,8 @@ export interface AppData {
   monitoringRules?: any[];
   segmentSnapshots?: Array<[number, any]>;
   changeHistory?: any[];
+  monitoredSegmentIds?: number[];
+  scheduledJobs?: any[];
 }
 
 class StorageManager {

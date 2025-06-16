@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS background_jobs (
     id TEXT PRIMARY KEY,
     user_id INTEGER NOT NULL,
     type TEXT NOT NULL CHECK (type IN ('bulk_add_tags', 'bulk_remove_tags')),
-    status TEXT NOT NULL DEFAULT 'running' CHECK (status IN ('running', 'completed', 'failed', 'paused', 'cancelled')),
+    status TEXT NOT NULL DEFAULT 'running' CHECK (status IN ('queued', 'running', 'completed', 'failed', 'paused', 'cancelled')),
     segment_id INTEGER NOT NULL,
     segment_name TEXT NOT NULL,
     tags TEXT NOT NULL, -- JSON array as string

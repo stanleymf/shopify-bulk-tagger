@@ -19,6 +19,7 @@ import {
 import { shopifyAPI, ShopifyCustomerSegment } from "@/lib/shopify-api";
 import { useConfig } from "@/lib/config-context";
 import { backgroundJobsService, BackgroundJob } from '../lib/background-jobs';
+import { serverJobsService, ServerJob } from '../lib/server-jobs';
 
 export function Dashboard() {
   const { isConnected } = useConfig();
@@ -46,6 +47,10 @@ export function Dashboard() {
   const [activeJob, setActiveJob] = useState<BackgroundJob | null>(null);
   const [jobHistory, setJobHistory] = useState<BackgroundJob[]>([]);
 
+  // Server jobs state
+  const [serverJobs, setServerJobs] = useState<ServerJob[]>([]);
+  const [serverProcessingAvailable, setServerProcessingAvailable] = useState(false);
+
   // Load segments on component mount
   useEffect(() => {
     loadSegments();
@@ -56,6 +61,9 @@ export function Dashboard() {
     
     setActiveJob(currentActiveJob);
     setJobHistory(allJobs);
+
+    // Load server jobs
+    loadServerJobs();
     
     // Subscribe to active job updates if there is one
     if (currentActiveJob) {
@@ -104,6 +112,36 @@ export function Dashboard() {
       console.error('Failed to load segments:', error);
     }
   };
+
+  const loadServerJobs = async () => {
+    try {
+      const available = await serverJobsService.isServerProcessingAvailable();
+      setServerProcessingAvailable(available);
+      
+      if (available) {
+        const jobs = await serverJobsService.getAllJobs();
+        setServerJobs(jobs);
+      }
+    } catch (error) {
+      console.error('Failed to load server jobs:', error);
+      setServerProcessingAvailable(false);
+    }
+  };
+
+  // Auto-refresh server jobs every 5 seconds if there are active jobs
+  useEffect(() => {
+    if (!serverProcessingAvailable) return;
+
+    const hasActiveJobs = serverJobs.some(job => job.status === 'queued' || job.status === 'running');
+    
+    if (hasActiveJobs) {
+      const interval = setInterval(() => {
+        loadServerJobs();
+      }, 5000); // Refresh every 5 seconds
+
+      return () => clearInterval(interval);
+    }
+  }, [serverProcessingAvailable, serverJobs]);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -262,6 +300,61 @@ export function Dashboard() {
     }
   };
 
+  const handleQueueServerJob = async (segmentId: number, operation: 'add' | 'remove') => {
+    const segment = segments.find(s => s.id === segmentId);
+    if (!segment) return;
+
+    const tags = bulkTagsInput.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0);
+    if (tags.length === 0) {
+      setError('Please enter at least one tag');
+      return;
+    }
+
+    try {
+      setError(null);
+      setSuccess(null);
+
+      const result = await serverJobsService.queueBulkTagJob(
+        operation === 'add' ? 'bulk_add_tags' : 'bulk_remove_tags',
+        segmentId,
+        segment.name,
+        tags
+      );
+
+      setSuccess(`✅ Server job queued successfully! Job ID: ${result.jobId}`);
+      setBulkTagsInput('');
+      setBulkTaggingState({
+        isActive: false,
+        segmentId: null,
+        operation: null,
+        progress: { current: 0, total: 0, skipped: 0, message: '' }
+      });
+
+      // Refresh server jobs
+      await loadServerJobs();
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to queue server job';
+      setError(`❌ Failed to queue server job: ${errorMessage}`);
+    }
+  };
+
+  const handleTriggerJobProcessing = async () => {
+    try {
+      setError(null);
+      const result = await serverJobsService.triggerJobProcessing();
+      setSuccess(`✅ ${result.message}. Active jobs: ${result.stats.activeJobs}/${result.stats.maxConcurrentJobs}`);
+      
+      // Refresh server jobs after a short delay
+      setTimeout(() => {
+        loadServerJobs();
+      }, 1000);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to trigger job processing';
+      setError(`❌ ${errorMessage}`);
+    }
+  };
+
   const handleExecuteBulkTagging = async () => {
     if (!bulkTaggingState.segmentId || !bulkTaggingState.operation || !bulkTagsInput.trim()) {
       setError('Please enter tags to process');
@@ -291,12 +384,21 @@ export function Dashboard() {
       return;
     }
 
-    // Start background job
+    // Start background job with enhanced settings for large operations
+    const segmentCustomerCount = segment.customer_count || 0;
+    const isLargeOperation = segmentCustomerCount > 1000;
+    
     const jobId = backgroundJobsService.startJob(
       bulkTaggingState.operation === 'add' ? 'bulk_add_tags' : 'bulk_remove_tags',
       bulkTaggingState.segmentId,
       segment.name,
-      tags
+      tags,
+      {
+        batchSize: isLargeOperation ? 5 : 10, // Smaller batches for large operations
+        saveInterval: isLargeOperation ? 25 : 50, // More frequent checkpoints for large operations
+        maxRetries: 3,
+        timeoutMinutes: isLargeOperation ? 60 : 30 // Longer timeout for large operations
+      }
     );
 
     // Update local state
@@ -418,6 +520,107 @@ export function Dashboard() {
     }
   };
 
+  const handleTestBulkJobsSystem = () => {
+    console.log('🧪 Testing Background Jobs System...');
+    
+    // Create a test job
+    const jobId = backgroundJobsService.startJob(
+      'bulk_add_tags',
+      999,
+      'Test Segment',
+      ['test-tag'],
+      {
+        batchSize: 5,
+        saveInterval: 10,
+        maxRetries: 3,
+        timeoutMinutes: 15
+      }
+    );
+    
+    console.log('✅ Test job created with ID:', jobId);
+    
+    // Subscribe to job updates
+    backgroundJobsService.subscribeToJob(jobId, (job) => {
+      console.log('📊 Job update:', job);
+      setActiveJob(job);
+      setJobHistory(backgroundJobsService.getAllJobs());
+    });
+    
+    // Simulate progress
+    let progress = 0;
+    const interval = setInterval(() => {
+      progress += 5;
+      backgroundJobsService.updateJobProgress(jobId, progress, 100, 2, `Processing customer ${progress}/100...`);
+      
+      if (progress >= 100) {
+        clearInterval(interval);
+        backgroundJobsService.completeJob(jobId, {
+          success: true,
+          processedCount: 98,
+          skippedCount: 2,
+          errors: []
+        });
+        console.log('✅ Test job completed successfully!');
+        setSuccess('Test background job completed successfully! The system is working.');
+      }
+    }, 1000);
+    
+    // Update UI
+    const newJob = backgroundJobsService.getJob(jobId);
+    if (newJob) {
+      setActiveJob(newJob);
+      setJobHistory(backgroundJobsService.getAllJobs());
+    }
+    
+    setSuccess('Test job started! Watch the background jobs section for progress...');
+  };
+
+  const handleDebugShopifyAPI = async () => {
+    console.log('🔍 Debugging Shopify API...');
+    
+    try {
+      console.log('API Initialized:', shopifyAPI.isInitialized());
+      
+      if (!shopifyAPI.isInitialized()) {
+        setError('Shopify API is not initialized. Please check your settings.');
+        return;
+      }
+      
+      // Test connection
+      console.log('Testing connection...');
+      const connectionResult = await shopifyAPI.testConnection();
+      console.log('Connection test result:', connectionResult);
+      
+      // Get segments
+      console.log('Getting segments...');
+      const segments = await shopifyAPI.getCustomerSegments();
+      console.log('Segments:', segments);
+      
+      if (segments.length > 0) {
+        const firstSegment = segments[0];
+        console.log('Testing with first segment:', firstSegment);
+        
+        // Try to get customer IDs
+        try {
+          console.log('Getting customer IDs...');
+          const customerIds = await shopifyAPI.getSegmentCustomerIds(firstSegment.id, 10); // Limit to 10 for testing
+          console.log('Customer IDs:', customerIds);
+          
+          setSuccess(`✅ Shopify API debug complete! Found ${segments.length} segments, first segment has ${customerIds.length} customers.`);
+        } catch (error) {
+          console.error('Failed to get customer IDs:', error);
+          setError(`Failed to get customer IDs: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+      } else {
+        setError('No segments found. Please sync your segments first.');
+      }
+      
+    } catch (error) {
+      console.error('Shopify API debug failed:', error);
+      setError(`Shopify API debug failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
   const totalCustomers = segments.reduce((sum, segment) => sum + (segment.customer_count || 0), 0);
   const lastSync = shopifyAPI.getLastSyncSync();
 
@@ -429,6 +632,20 @@ export function Dashboard() {
           <p className="text-gray-600 mt-1">Manage your Shopify customer segments and their tags</p>
         </div>
         <div className="flex gap-2">
+          <Button 
+            onClick={handleTestBulkJobsSystem} 
+            variant="outline"
+            className="border-green-300 hover:bg-green-50 text-xs text-green-700"
+          >
+            🧪 Test Jobs System
+          </Button>
+          <Button 
+            onClick={handleDebugShopifyAPI} 
+            variant="outline"
+            className="border-purple-300 hover:bg-purple-50 text-xs text-purple-700"
+          >
+            🔍 Debug API
+          </Button>
           <Button 
             onClick={handleClearCounts} 
             variant="outline"
@@ -575,8 +792,42 @@ export function Dashboard() {
                   </span>
                 </div>
                 
+                {/* Enhanced job statistics */}
+                {(() => {
+                  const stats = backgroundJobsService.getJobStats(activeJob.id);
+                  return stats && (
+                    <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                      <div className="bg-blue-100 rounded px-2 py-1">
+                        <span className="text-blue-600">Rate: </span>
+                        <span className="font-medium text-blue-800">{stats.rate} customers/min</span>
+                      </div>
+                      <div className="bg-blue-100 rounded px-2 py-1">
+                        <span className="text-blue-600">ETA: </span>
+                        <span className="font-medium text-blue-800">{stats.eta}</span>
+                      </div>
+                      {activeJob.checkpoint && (
+                        <>
+                          <div className="bg-green-100 rounded px-2 py-1">
+                            <span className="text-green-600">💾 Checkpoint: </span>
+                            <span className="font-medium text-green-800">{stats.checkpointAge}</span>
+                          </div>
+                          <div className="bg-green-100 rounded px-2 py-1">
+                            <span className="text-green-600">Batch: </span>
+                            <span className="font-medium text-green-800">{activeJob.checkpoint.batchIndex + 1}</span>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  );
+                })()}
+                
                 <div className="mt-2 text-xs text-blue-600">
                   Tags: {activeJob.tags.join(', ')}
+                  {activeJob.settings && (
+                    <span className="ml-2 text-blue-500">
+                      (Batch size: {activeJob.settings.batchSize}, Save every: {activeJob.settings.saveInterval})
+                    </span>
+                  )}
                 </div>
               </div>
             )}
@@ -898,6 +1149,7 @@ export function Dashboard() {
                             )}
                             
                             <div className="flex gap-2">
+                              {/* Client-Side Execution */}
                               <Button
                                 size="sm"
                                 onClick={handleExecuteBulkTagging}
@@ -912,10 +1164,24 @@ export function Dashboard() {
                                 ) : (
                                   <>
                                     <Tag className="h-3 w-3 mr-1" />
-                                    {bulkTaggingState.operation === 'add' ? 'Add Tags' : 'Remove Tags'}
+                                    Run Now (Browser)
                                   </>
                                 )}
                               </Button>
+                              
+                              {/* Server-Side Execution */}
+                              {serverProcessingAvailable && (
+                                <Button
+                                  size="sm"
+                                  onClick={() => handleQueueServerJob(segment.id, bulkTaggingState.operation!)}
+                                  disabled={bulkTaggingState.isActive || !bulkTagsInput.trim()}
+                                  className="bg-purple-600 hover:bg-purple-700 text-xs"
+                                >
+                                  <Tag className="h-3 w-3 mr-1" />
+                                  Queue for Server
+                                </Button>
+                              )}
+                              
                               <Button
                                 size="sm"
                                 variant="outline"
@@ -928,37 +1194,95 @@ export function Dashboard() {
                             </div>
                           </div>
                         ) : (
-                          <div className="flex gap-2">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handleStartBulkTagging(segment.id, 'add')}
-                              className="flex-1 text-xs h-8 border-green-300 text-green-700 hover:bg-green-50"
-                            >
-                              <Plus className="h-3 w-3 mr-1" />
-                              Add Tags
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handleStartBulkTagging(segment.id, 'remove')}
-                              className="flex-1 text-xs h-8 border-red-300 text-red-700 hover:bg-red-50"
-                            >
-                              <TagIcon className="h-3 w-3 mr-1" />
-                              Remove Tags
-                            </Button>
+                          <div className="space-y-2">
+                            {/* Client-Side Bulk Tagging */}
+                            <div className="text-xs font-medium text-gray-600 mb-1">Browser-Based (Requires Active Session)</div>
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleStartBulkTagging(segment.id, 'add')}
+                                className="flex-1 text-xs h-8 border-green-300 text-green-700 hover:bg-green-50"
+                              >
+                                <Plus className="h-3 w-3 mr-1" />
+                                Add Tags
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleStartBulkTagging(segment.id, 'remove')}
+                                className="flex-1 text-xs h-8 border-red-300 text-red-700 hover:bg-red-50"
+                              >
+                                <TagIcon className="h-3 w-3 mr-1" />
+                                Remove Tags
+                              </Button>
+                            </div>
+
+                            {/* Server-Side Job Queue */}
+                            {serverProcessingAvailable && (
+                              <>
+                                <div className="text-xs font-medium text-purple-600 mb-1 flex items-center">
+                                  ☁️ Server-Side (Runs Even When Browser Closed)
+                                </div>
+                                                                 <div className="flex gap-2">
+                                   <Button
+                                     size="sm"
+                                     onClick={() => {
+                                       setBulkTaggingState({
+                                         isActive: false,
+                                         segmentId: segment.id,
+                                         operation: 'add',
+                                         progress: { current: 0, total: 0, skipped: 0, message: 'Preparing server job...' }
+                                       });
+                                     }}
+                                     className="flex-1 text-xs h-8 bg-purple-600 hover:bg-purple-700 text-white"
+                                   >
+                                     <Plus className="h-3 w-3 mr-1" />
+                                     Queue Add Tags
+                                   </Button>
+                                   <Button
+                                     size="sm"
+                                     onClick={() => {
+                                       setBulkTaggingState({
+                                         isActive: false,
+                                         segmentId: segment.id,
+                                         operation: 'remove',
+                                         progress: { current: 0, total: 0, skipped: 0, message: 'Preparing server job...' }
+                                       });
+                                     }}
+                                     className="flex-1 text-xs h-8 bg-purple-600 hover:bg-purple-700 text-white"
+                                   >
+                                     <TagIcon className="h-3 w-3 mr-1" />
+                                     Queue Remove Tags
+                                   </Button>
+                                 </div>
+                              </>
+                            )}
                           </div>
                         )}
                         
-                        {/* Debug Test Button */}
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => handleTestCustomerAccess(segment.id)}
-                          className="w-full text-xs h-6 text-gray-500 hover:text-gray-700 hover:bg-gray-50"
-                        >
-                          🔍 Test Customer Access (Debug)
-                        </Button>
+                                          {/* Debug Info */}
+                        <div className="space-y-1">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleTestCustomerAccess(segment.id)}
+                            className="w-full text-xs h-6 text-gray-500 hover:text-gray-700 hover:bg-gray-50"
+                          >
+                            🔍 Test Customer Access (Debug)
+                          </Button>
+                          <div className="text-xs text-gray-400 text-center">
+                            Server Processing: {serverProcessingAvailable ? '✅ Available' : '❌ Not Available'}
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={loadServerJobs}
+                            className="w-full text-xs h-6 text-purple-500 hover:text-purple-700 hover:bg-purple-50"
+                          >
+                            🔄 Test Server Jobs API
+                          </Button>
+                        </div>
                       </div>
                     </CardContent>
                   </Card>
@@ -968,6 +1292,195 @@ export function Dashboard() {
           )}
         </CardContent>
       </Card>
+
+      {/* Server Jobs Section */}
+      {serverProcessingAvailable && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-lg font-medium text-gray-900 flex items-center">
+                ☁️ Server-Side Jobs
+                <Badge variant="secondary" className="ml-2 bg-purple-50 text-purple-700 border-purple-200">
+                  Runs independently
+                </Badge>
+              </CardTitle>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  onClick={handleTriggerJobProcessing}
+                  className="bg-purple-600 hover:bg-purple-700"
+                >
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Process Jobs Now
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={loadServerJobs}
+                >
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Refresh
+                </Button>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {serverJobs.length === 0 ? (
+              <div className="text-center py-8">
+                <div className="text-gray-500 mb-2">No server jobs found</div>
+                <div className="text-sm text-gray-400">
+                  Queue bulk tagging operations to see them here
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {serverJobs.slice(0, 10).map((job) => {
+                  const statusInfo = serverJobsService.formatJobStatus(job.status);
+                  const progress = serverJobsService.getJobProgress(job);
+                  const duration = serverJobsService.getJobDuration(job);
+                  const eta = serverJobsService.getEstimatedTimeRemaining(job);
+                  const canCancel = job.status === 'queued' || job.status === 'running';
+                  
+                  return (
+                    <div key={job.id} className="border border-gray-200 rounded-lg p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <Badge 
+                            variant="secondary" 
+                            className={`bg-${statusInfo.color}-50 text-${statusInfo.color}-700 border-${statusInfo.color}-200`}
+                          >
+                            {statusInfo.text}
+                          </Badge>
+                          <span className="text-sm font-medium">
+                            {job.type === 'bulk_add_tags' ? 'Add Tags' : 'Remove Tags'}
+                          </span>
+                          {job.status === 'queued' && (
+                            <div className="flex items-center gap-1 text-xs text-blue-600">
+                              <div className="h-2 w-2 bg-blue-500 rounded-full animate-pulse"></div>
+                              Waiting in queue
+                            </div>
+                          )}
+                          {job.status === 'running' && (
+                            <div className="flex items-center gap-1 text-xs text-green-600">
+                              <div className="h-2 w-2 bg-green-500 rounded-full animate-pulse"></div>
+                              Processing
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="text-xs text-gray-500">
+                            {duration}
+                          </div>
+                          {canCancel && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={async () => {
+                                if (confirm(`Are you sure you want to cancel this ${job.status} job?`)) {
+                                  try {
+                                    await serverJobsService.cancelJob(job.id);
+                                    setSuccess('Job cancelled successfully');
+                                    loadServerJobs(); // Refresh the job list
+                                  } catch (error) {
+                                    setError(`Failed to cancel job: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                                  }
+                                }
+                              }}
+                              className="text-xs px-2 py-1 h-6 border-red-200 text-red-600 hover:bg-red-50"
+                            >
+                              Cancel
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                      
+                      <div className="text-sm text-gray-700 mb-2">
+                        <strong>Segment:</strong> {job.segmentName}
+                      </div>
+                      
+                      <div className="text-sm text-gray-700 mb-2">
+                        <strong>Tags:</strong> {job.tags.join(', ')}
+                      </div>
+                      
+                      {/* Progress for queued jobs */}
+                      {job.status === 'queued' && (
+                        <div className="space-y-2">
+                          <div className="text-sm text-blue-600">
+                            {job.progress.message}
+                          </div>
+                          <div className="w-full bg-blue-100 rounded-full h-2">
+                            <div className="bg-blue-500 h-2 rounded-full animate-pulse w-1/4" />
+                          </div>
+                          <div className="text-xs text-blue-600">
+                            Job will start processing automatically
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* Progress for running jobs */}
+                      {job.status === 'running' && (
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between text-sm">
+                            <span>Progress: {job.progress.current}/{job.progress.total}</span>
+                            <div className="flex items-center gap-2">
+                              <span>{progress}%</span>
+                              {eta !== 'Unknown' && (
+                                <span className="text-gray-500">ETA: {eta}</span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="w-full bg-gray-200 rounded-full h-2">
+                            <div 
+                              className="bg-green-600 h-2 rounded-full transition-all duration-300"
+                              style={{ width: `${progress}%` }}
+                            />
+                          </div>
+                          <div className="text-xs text-gray-600">
+                            {job.progress.message}
+                          </div>
+                          {job.progress.skipped > 0 && (
+                            <div className="text-xs text-yellow-600">
+                              Skipped: {job.progress.skipped} customers
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      
+                      {/* Results for completed jobs */}
+                      {job.result && (
+                        <div className="mt-2 text-sm">
+                          <span className={job.result.success ? 'text-green-600' : 'text-red-600'}>
+                            {job.result.success ? '✅' : '❌'} 
+                            Processed: {job.result.processedCount}, 
+                            Skipped: {job.result.skippedCount}
+                          </span>
+                          {job.result.errors.length > 0 && (
+                            <div className="text-red-600 text-xs mt-1">
+                              Errors: {job.result.errors.slice(0, 2).join(', ')}
+                              {job.result.errors.length > 2 && ` (+${job.result.errors.length - 2} more)`}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      
+                      <div className="text-xs text-gray-500 mt-2 flex items-center justify-between">
+                        <span>Job ID: {job.id}</span>
+                        <span>Started: {new Date(job.startTime).toLocaleString()}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+                
+                {serverJobs.length > 10 && (
+                  <div className="text-center text-sm text-gray-500">
+                    Showing 10 of {serverJobs.length} jobs
+                  </div>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

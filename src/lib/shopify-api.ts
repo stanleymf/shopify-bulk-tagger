@@ -88,7 +88,9 @@ class ShopifyAPIService {
 
   constructor() {
     // Try to initialize from stored configuration
-    this.initializeFromStorage();
+    this.initializeFromStorage().catch(error => {
+      console.error('Failed to initialize Shopify API from storage:', error);
+    });
   }
 
   // Initialize from stored configuration using migration service
@@ -856,10 +858,12 @@ class ShopifyAPIService {
         }
       }
       
-      // If still no match, use a safe fallback
+      // If still no match, throw an error instead of using a fallback
+      // This will help identify segments that can't be properly monitored
       if (translatedQuery === segmentQuery) {
-        console.warn(`Using fallback query for untranslatable segment query`);
-        translatedQuery = 'state:enabled';
+        console.error(`❌ Cannot translate segment query: "${segmentQuery}"`);
+        console.error(`❌ This segment cannot be monitored for changes due to unsupported query syntax`);
+        throw new Error(`Unsupported segment query syntax: "${segmentQuery}". This segment cannot be monitored for real-time changes.`);
       }
     }
 
@@ -869,62 +873,23 @@ class ShopifyAPIService {
 
   /**
    * Get customer IDs from a segment (without full customer data)
-   * Uses GraphQL customer search with segment criteria and pagination
+   * Uses direct GraphQL segment customer access - let Shopify handle the query
    */
   async getSegmentCustomerIds(segmentId: number, limit: number = 30000): Promise<string[]> {
     if (!this.isInitialized()) {
       throw new Error('Shopify API service not initialized');
     }
 
-    console.log(`Fetching customer IDs for segment ${segmentId} with limit ${limit}...`);
+    console.log(`🔍 Fetching customer IDs for segment ${segmentId} with limit ${limit} using direct segment access...`);
 
-    // First, try to get the segment to understand its query
-    const segments = await this.getStoredSegments();
-    const segment = segments.find(s => s.id === segmentId);
-    
-    if (!segment) {
-      throw new Error(`Segment ${segmentId} not found in stored segments`);
-    }
-
-    console.log(`Found segment: ${segment.name}, query: ${segment.query}`);
-
-    // Translate segment query to customer search query
-    let searchQuery = '';
-    
-    if (segment.query) {
-      // Translate the segment query to customer search syntax
-      searchQuery = this.translateSegmentQueryToCustomerSearch(segment.query);
-    } else {
-      // Fallback: search for customers and then filter (not ideal but works)
-      searchQuery = 'state:enabled'; // Get all enabled customers
-    }
-
-    // Use pagination to fetch all customers
-    const allCustomerIds: string[] = [];
-    let hasNextPage = true;
-    let cursor: string | null = null;
-    let pageCount = 0;
-    const maxPages = Math.ceil(limit / 250); // Shopify's max per page is 250
-
-    console.log(`Starting paginated fetch for segment "${segment.name}" with search query: "${searchQuery}"`);
-    console.log(`Maximum pages to fetch: ${maxPages} (for up to ${limit} customers)`);
-
-    while (hasNextPage && pageCount < maxPages && allCustomerIds.length < limit) {
-      pageCount++;
-      const pageSize = Math.min(250, limit - allCustomerIds.length);
-      
-      console.log(`Fetching page ${pageCount}/${maxPages}, size: ${pageSize}, cursor: ${cursor || 'null'}`);
-
-      // Use customer search with segment criteria
-      const query = `
-        query($query: String!, $first: Int!, $after: String) {
-          customers(query: $query, first: $first, after: $after) {
+    const query = `
+      query getSegmentCustomers($segmentId: ID!, $first: Int!, $after: String) {
+        customerSegment(id: $segmentId) {
+          customers(first: $first, after: $after) {
             edges {
               node {
                 id
-                email
               }
-              cursor
             }
             pageInfo {
               hasNextPage
@@ -932,77 +897,79 @@ class ShopifyAPIService {
             }
           }
         }
-      `;
+      }
+    `;
 
+    const customerIds: string[] = [];
+    let hasNextPage = true;
+    let cursor: string | null = null;
+    const batchSize = Math.min(250, limit); // GraphQL limit is 250
+
+    console.log(`🔍 Starting customer fetch loop for segment ${segmentId}`);
+
+    while (hasNextPage && customerIds.length < limit) {
       const variables: any = {
-        query: searchQuery,
-        first: pageSize
+        segmentId: `gid://shopify/CustomerSegment/${segmentId}`,
+        first: Math.min(batchSize, limit - customerIds.length)
       };
 
       if (cursor) {
         variables.after = cursor;
       }
 
-      console.log(`Page ${pageCount} query variables:`, variables);
+      console.log(`🔍 Making GraphQL query for segment ${segmentId} with variables:`, JSON.stringify(variables, null, 2));
 
-      const response = await this.graphqlQuery<{
-        customers: {
-          edges: Array<{ node: { id: string; email: string }; cursor: string }>;
-          pageInfo: { hasNextPage: boolean; endCursor?: string };
-        };
-      }>(query, variables);
+      try {
+        console.log(`🔍 About to call graphqlQuery for segment ${segmentId}...`);
+        const response = await this.graphqlQuery<{
+          customerSegment: {
+            customers: {
+              edges: Array<{ node: { id: string } }>;
+              pageInfo: { hasNextPage: boolean; endCursor?: string };
+            };
+          };
+        }>(query, variables);
 
-      if (response.errors) {
-        console.error('GraphQL errors:', response.errors);
-        throw new Error(`Failed to search customers: ${response.errors.map(e => e.message).join(', ')}`);
-      }
+        if (response.errors) {
+          console.error('GraphQL errors:', response.errors);
+          throw new Error(`Failed to fetch segment customers: ${response.errors.map(e => e.message).join(', ')}`);
+        }
 
-      if (!response.data?.customers) {
-        console.error('No customers data received');
-        throw new Error('No customers data received from search');
-      }
+        console.log(`🔍 GraphQL query completed for segment ${segmentId}. Response:`, JSON.stringify(response.data, null, 2));
+        
+        if (!response.data?.customerSegment?.customers?.edges) {
+          console.warn(`⚠️ No customers found for segment ${segmentId}. Data structure:`, JSON.stringify(response.data, null, 2));
+          break;
+        }
 
-      const { edges, pageInfo } = response.data.customers;
-      console.log(`Page ${pageCount} returned ${edges.length} customers, hasNextPage: ${pageInfo.hasNextPage}`);
+        const edges = response.data.customerSegment.customers.edges;
+        const batchIds = edges.map((edge: any) => edge.node.id.replace('gid://shopify/Customer/', ''));
+        customerIds.push(...batchIds);
 
-      // Add customer IDs from this page
-      const pageCustomerIds = edges.map(edge => edge.node.id);
-      allCustomerIds.push(...pageCustomerIds);
+        hasNextPage = response.data.customerSegment.customers.pageInfo.hasNextPage;
+        cursor = response.data.customerSegment.customers.pageInfo.endCursor || null;
 
-      // Update pagination info
-      hasNextPage = pageInfo.hasNextPage && allCustomerIds.length < limit;
-      cursor = pageInfo.endCursor || null;
+        console.log(`✅ Fetched ${batchIds.length} customer IDs (total: ${customerIds.length}) for segment ${segmentId}`);
 
-      console.log(`Total customers fetched so far: ${allCustomerIds.length}/${limit}`);
+        // Add delay between pages to respect rate limits
+        if (hasNextPage) {
+          const delay = limit > 10000 ? 300 : 500;
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
 
-      // Add delay between pages to respect rate limits
-      // Reduce delay for large operations to improve performance
-      if (hasNextPage) {
-        const delay = limit > 10000 ? 300 : 500; // Faster for large operations
-        await new Promise(resolve => setTimeout(resolve, delay));
-      }
-
-      // Progress update every 10 pages for large operations
-      if (pageCount % 10 === 0 && limit > 5000) {
-        console.log(`🔄 Progress: ${pageCount} pages completed, ${allCustomerIds.length} customers fetched`);
+      } catch (error) {
+        console.error(`💥 CRITICAL ERROR fetching segment customers for segment ${segmentId}:`, error);
+        console.error(`💥 Error details:`, {
+          name: error instanceof Error ? error.name : 'Unknown',
+          message: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : 'No stack trace'
+        });
+        throw error;
       }
     }
 
-    // Handle special case for segments without specific queries
-    if (!segment.query && allCustomerIds.length > 0) {
-      console.warn(`Segment "${segment.name}" doesn't have a specific query. Limiting to first 100 customers for safety.`);
-      const limitedIds = allCustomerIds.slice(0, 100);
-      console.log(`Returning limited customer IDs: ${limitedIds.length} customers`);
-      return limitedIds;
-    }
-
-    console.log(`✅ Successfully fetched ${allCustomerIds.length} customer IDs from ${pageCount} pages for segment "${segment.name}"`);
-    
-    if (allCustomerIds.length >= limit) {
-      console.log(`⚠️  Reached maximum limit of ${limit} customers. Segment may have more customers.`);
-    }
-    
-    return allCustomerIds;
+    console.log(`🏁 getSegmentCustomerIds completed for segment ${segmentId}. Total customers: ${customerIds.length}`);
+    return customerIds;
   }
 
   /**
@@ -1180,7 +1147,14 @@ class ShopifyAPIService {
     }
 
     // Use batch processing for GraphQL (more reliable than bulk operations)
-    return await this.batchAddTags(customerIds, tagsToAdd, onProgress, totalForProgress, cancellationChecker);
+    return await this.batchAddTags(
+      customerIds, 
+      tagsToAdd, 
+      onProgress, 
+      totalForProgress, 
+      cancellationChecker
+      // Note: Checkpoint functionality will be added when integrated with background jobs
+    );
   }
 
   /**
@@ -1453,22 +1427,42 @@ class ShopifyAPIService {
     tagsToAdd: string[], 
     onProgress?: (current: number, total: number, skipped: number, message: string) => void, 
     totalForProgress?: number,
-    cancellationChecker?: () => boolean
+    cancellationChecker?: () => boolean,
+    checkpointSaver?: (lastProcessedId: string, processedIds: string[], batchIndex: number) => void,
+    resumeFromCheckpoint?: { processedCustomerIds: string[]; batchIndex: number }
   ): Promise<{
     success: boolean;
     processedCount: number;
     skippedCount: number;
     errors: string[];
-  }> {
+  }>   {
     const errors: string[] = [];
     let processedCount = 0;
     let skippedCount = 0;
     const batchSize = 10; // Process in smaller batches to avoid rate limits
     const totalCustomers = totalForProgress || customerIds.length;
 
-    onProgress?.(0, totalCustomers, 0, `Starting to add tags to ${customerIds.length} customers...`);
+    // Handle checkpoint resumption
+    const processedCustomerIds = resumeFromCheckpoint?.processedCustomerIds || [];
+    const startBatchIndex = resumeFromCheckpoint?.batchIndex || 0;
+    
+    // Filter out already processed customers if resuming
+    const remainingCustomerIds = resumeFromCheckpoint 
+      ? customerIds.filter(id => !processedCustomerIds.includes(id))
+      : customerIds;
+    
+    // Set initial progress based on checkpoint
+    processedCount = processedCustomerIds.length;
+    
+    if (resumeFromCheckpoint) {
+      onProgress?.(processedCount, totalCustomers, skippedCount, `Resuming from checkpoint: ${processedCount} customers already processed...`);
+    } else {
+      onProgress?.(0, totalCustomers, 0, `Starting to add tags to ${customerIds.length} customers...`);
+    }
 
-    for (let i = 0; i < customerIds.length; i += batchSize) {
+    for (let i = 0; i < remainingCustomerIds.length; i += batchSize) {
+      const currentBatchIndex = startBatchIndex + Math.floor(i / batchSize);
+      
       // Check for cancellation before processing each batch
       if (cancellationChecker && cancellationChecker()) {
         onProgress?.(processedCount, totalCustomers, skippedCount, 'Operation cancelled by user');
@@ -1480,14 +1474,14 @@ class ShopifyAPIService {
         };
       }
 
-      const batch = customerIds.slice(i, i + batchSize);
+      const batch = remainingCustomerIds.slice(i, i + batchSize);
       
-      // Process each customer in the batch
-      await Promise.all(batch.map(async (customerId, index) => {
+      // Process each customer in the batch sequentially to avoid race conditions
+      for (const customerId of batch) {
         try {
           // Check for cancellation before processing each customer
           if (cancellationChecker && cancellationChecker()) {
-            return; // Skip this customer if cancelled
+            break; // Exit the batch processing if cancelled
           }
 
           // First, get the customer's current tags to check if we need to add
@@ -1511,14 +1505,13 @@ class ShopifyAPIService {
             if (tagsToActuallyAdd.length === 0) {
               // All tags already exist, skip this customer
               skippedCount++;
-              const currentProgress = i + index + 1;
-              onProgress?.(currentProgress, totalCustomers, skippedCount, `Skipped customer ${currentProgress}/${totalCustomers} (already has tags)`);
-              return;
+              onProgress?.(processedCount, totalCustomers, skippedCount, `Skipped customer (already has tags) - ${processedCount}/${totalCustomers} processed, ${skippedCount} skipped`);
+              continue;
             }
 
             // Check for cancellation before making the update
             if (cancellationChecker && cancellationChecker()) {
-              return; // Skip this customer if cancelled
+              break; // Exit if cancelled
             }
 
             // Add only the tags that don't already exist
@@ -1556,25 +1549,31 @@ class ShopifyAPIService {
             }
 
             processedCount++;
+            processedCustomerIds.push(customerId);
           } else {
             skippedCount++;
           }
 
           // Update progress for each customer
-          const currentProgress = i + index + 1;
-          onProgress?.(currentProgress, totalCustomers, skippedCount, `Tagged customer ${currentProgress}/${totalCustomers}`);
+          onProgress?.(processedCount, totalCustomers, skippedCount, `Tagged customer - ${processedCount}/${totalCustomers} processed, ${skippedCount} skipped`);
           
         } catch (error) {
           errors.push(`Failed to update customer ${customerId}: ${error instanceof Error ? error.message : 'Unknown error'}`);
           skippedCount++;
-          onProgress?.(i + index + 1, totalCustomers, skippedCount, `Failed to tag customer ${i + index + 1}/${totalCustomers}`);
+          onProgress?.(processedCount, totalCustomers, skippedCount, `Failed to tag customer - ${processedCount}/${totalCustomers} processed, ${skippedCount} skipped`);
         }
-      }));
+      };
+
+      // Save checkpoint after each batch
+      if (checkpointSaver && batch.length > 0) {
+        const lastProcessedId = batch[batch.length - 1];
+        checkpointSaver(lastProcessedId, [...processedCustomerIds], currentBatchIndex);
+      }
 
       // Add delay between batches to respect rate limits
-      if (i + batchSize < customerIds.length) {
+      if (i + batchSize < remainingCustomerIds.length) {
         await new Promise(resolve => setTimeout(resolve, 500));
-        onProgress?.(Math.min(i + batchSize, totalCustomers), totalCustomers, skippedCount, `Processed batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(totalCustomers / batchSize)}`);
+        onProgress?.(processedCount, totalCustomers, skippedCount, `Processed batch ${currentBatchIndex + 1}/${Math.ceil(remainingCustomerIds.length / batchSize)} (checkpoint saved)`);
       }
     }
 
@@ -1606,11 +1605,27 @@ class ShopifyAPIService {
     onProgress?.(0, totalCustomers, 0, `Starting to remove tags from ${customerIds.length} customers...`);
 
     for (let i = 0; i < customerIds.length; i += batchSize) {
+      // Check for cancellation before processing each batch
+      if (cancellationChecker && cancellationChecker()) {
+        onProgress?.(processedCount, totalCustomers, skippedCount, 'Operation cancelled by user');
+        return {
+          success: false,
+          processedCount,
+          skippedCount,
+          errors: [...errors, 'Operation cancelled by user']
+        };
+      }
+
       const batch = customerIds.slice(i, i + batchSize);
       
-      // Process each customer in the batch
-      await Promise.all(batch.map(async (customerId, index) => {
+      // Process each customer in the batch sequentially to avoid race conditions
+      for (const customerId of batch) {
         try {
+          // Check for cancellation before processing each customer
+          if (cancellationChecker && cancellationChecker()) {
+            break; // Exit the batch processing if cancelled
+          }
+
           // First, get the customer's current tags to check if we need to remove
           const customerQuery = `
             query getCustomer($id: ID!) {
@@ -1632,9 +1647,13 @@ class ShopifyAPIService {
             if (tagsToActuallyRemove.length === 0) {
               // None of the tags exist, skip this customer
               skippedCount++;
-              const currentProgress = i + index + 1;
-              onProgress?.(currentProgress, totalCustomers, skippedCount, `Skipped customer ${currentProgress}/${totalCustomers} (doesn't have tags)`);
-              return;
+              onProgress?.(processedCount, totalCustomers, skippedCount, `Skipped customer (doesn't have tags) - ${processedCount}/${totalCustomers} processed, ${skippedCount} skipped`);
+              continue;
+            }
+
+            // Check for cancellation before making the update
+            if (cancellationChecker && cancellationChecker()) {
+              break; // Exit if cancelled
             }
 
             // Remove only the tags that actually exist
@@ -1677,20 +1696,19 @@ class ShopifyAPIService {
           }
 
           // Update progress for each customer
-          const currentProgress = i + index + 1;
-          onProgress?.(currentProgress, totalCustomers, skippedCount, `Untagged customer ${currentProgress}/${totalCustomers}`);
+          onProgress?.(processedCount, totalCustomers, skippedCount, `Untagged customer - ${processedCount}/${totalCustomers} processed, ${skippedCount} skipped`);
           
         } catch (error) {
           errors.push(`Failed to update customer ${customerId}: ${error instanceof Error ? error.message : 'Unknown error'}`);
           skippedCount++;
-          onProgress?.(i + index + 1, totalCustomers, skippedCount, `Failed to untag customer ${i + index + 1}/${totalCustomers}`);
+          onProgress?.(processedCount, totalCustomers, skippedCount, `Failed to untag customer - ${processedCount}/${totalCustomers} processed, ${skippedCount} skipped`);
         }
-      }));
+      }
 
       // Add delay between batches to respect rate limits
       if (i + batchSize < customerIds.length) {
         await new Promise(resolve => setTimeout(resolve, 500));
-        onProgress?.(Math.min(i + batchSize, totalCustomers), totalCustomers, skippedCount, `Processed batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(totalCustomers / batchSize)}`);
+        onProgress?.(processedCount, totalCustomers, skippedCount, `Processed batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(customerIds.length / batchSize)}`);
       }
     }
 
