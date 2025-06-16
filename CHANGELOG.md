@@ -5,6 +5,18 @@ All notable changes to the Bulk-Tagger project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.14.4] - 2025-01-16
+
+### Added
+- **Enhanced Debugging**: Added comprehensive console logging to bulk tagging operations for better troubleshooting
+- **Detailed Progress Tracking**: Enhanced progress callbacks with detailed console output for debugging job issues
+- **Job Execution Monitoring**: Added step-by-step logging to identify where bulk tagging jobs might fail or get stuck
+
+### Technical Details
+- Added extensive console.log statements throughout the bulk tagging execution pipeline
+- Enhanced error logging to help identify issues with jobs that don't start or complete
+- Improved debugging visibility for segment access, API calls, and job progress tracking
+
 ## [1.14.3] - 2025-01-16
 
 ### Fixed

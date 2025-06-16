@@ -360,23 +360,18 @@ export function Dashboard() {
   };
 
   const handleExecuteBulkTagging = async () => {
-    if (!bulkTaggingState.segmentId || !bulkTaggingState.operation || !bulkTagsInput.trim()) {
-      setError('Please enter tags to process');
+    console.log('🚀 Starting bulk tagging execution...');
+    console.log('🔍 Current bulkTaggingState:', bulkTaggingState);
+    
+    if (!bulkTaggingState.segmentId || !bulkTagsInput.trim() || !bulkTaggingState.operation) {
+      console.error('❌ Invalid tagging state:', { ...bulkTaggingState, tags: bulkTagsInput });
+      setError('Please select a segment, enter tags, and choose an operation');
       return;
     }
 
-    if (!shopifyAPI.isInitialized()) {
-      setError('Please connect your Shopify store in Settings first');
-      return;
-    }
-
-    // Parse tags from input (comma-separated)
-    const tags = bulkTagsInput
-      .split(',')
-      .map(tag => tag.trim())
-      .filter(tag => tag.length > 0);
-
+    const tags = bulkTagsInput.split(',').map((tag: string) => tag.trim()).filter((tag: string) => tag.length > 0);
     if (tags.length === 0) {
+      console.error('❌ No valid tags found:', bulkTagsInput);
       setError('Please enter valid tags');
       return;
     }
@@ -384,13 +379,19 @@ export function Dashboard() {
     // Get segment info
     const segment = segments.find(s => s.id === bulkTaggingState.segmentId);
     if (!segment) {
+      console.error('❌ Segment not found:', bulkTaggingState.segmentId);
       setError('Segment not found');
       return;
     }
 
+    console.log('✅ Found segment:', segment);
+    console.log('✅ Tags to process:', tags);
+
     // Start background job with enhanced settings for large operations
     const segmentCustomerCount = segment.customer_count || 0;
     const isLargeOperation = segmentCustomerCount > 1000;
+    
+    console.log(`📊 Segment customer count: ${segmentCustomerCount}, isLargeOperation: ${isLargeOperation}`);
     
     const jobId = backgroundJobsService.startJob(
       bulkTaggingState.operation === 'add' ? 'bulk_add_tags' : 'bulk_remove_tags',
@@ -405,15 +406,21 @@ export function Dashboard() {
       }
     );
 
+    console.log('✅ Background job started with ID:', jobId);
+
     // Update local state
     const newJob = backgroundJobsService.getJob(jobId);
     if (newJob) {
+      console.log('✅ Job retrieved from service:', newJob);
       setActiveJob(newJob);
       setJobHistory(backgroundJobsService.getAllJobs());
+    } else {
+      console.error('❌ Failed to retrieve job from service:', jobId);
     }
 
     // Subscribe to job updates
     backgroundJobsService.subscribeToJob(jobId, (job) => {
+      console.log('📊 Job progress update:', job);
       setActiveJob(job);
       setJobHistory(backgroundJobsService.getAllJobs());
       
@@ -445,29 +452,45 @@ export function Dashboard() {
     setError(null);
     setSuccess(null);
 
+    console.log('🎯 Starting actual bulk operation...');
+
     try {
       let result;
       if (bulkTaggingState.operation === 'add') {
+        console.log('➕ Calling bulkAddTagsToSegment...');
         result = await shopifyAPI.bulkAddTagsToSegment(
           bulkTaggingState.segmentId, 
           tags,
           (current: number, total: number, skipped: number, message: string) => {
+            console.log(`📈 Progress: ${current}/${total} (${skipped} skipped) - ${message}`);
             // Update background job progress
             backgroundJobsService.updateJobProgress(jobId, current, total, skipped, message);
           },
-          () => backgroundJobsService.isJobCancelled(jobId) // Cancellation checker
+          () => {
+            const isCancelled = backgroundJobsService.isJobCancelled(jobId);
+            console.log(`🔍 Cancellation check: ${isCancelled}`);
+            return isCancelled;
+          }
         );
       } else {
+        console.log('➖ Calling bulkRemoveTagsFromSegment...');
         result = await shopifyAPI.bulkRemoveTagsFromSegment(
           bulkTaggingState.segmentId, 
           tags,
           (current: number, total: number, skipped: number, message: string) => {
+            console.log(`📈 Progress: ${current}/${total} (${skipped} skipped) - ${message}`);
             // Update background job progress
             backgroundJobsService.updateJobProgress(jobId, current, total, skipped, message);
           },
-          () => backgroundJobsService.isJobCancelled(jobId) // Cancellation checker
+          () => {
+            const isCancelled = backgroundJobsService.isJobCancelled(jobId);
+            console.log(`🔍 Cancellation check: ${isCancelled}`);
+            return isCancelled;
+          }
         );
       }
+
+      console.log('✅ Bulk operation completed:', result);
 
       // Complete the background job
       backgroundJobsService.completeJob(jobId, result);
@@ -502,6 +525,7 @@ export function Dashboard() {
         }
       }
     } catch (err) {
+      console.error('💥 Bulk tagging error:', err);
       const errorMessage = err instanceof Error ? err.message : 'Failed to process bulk tagging';
       
       // Complete the background job with error
@@ -514,6 +538,7 @@ export function Dashboard() {
       
       setError(errorMessage);
     } finally {
+      console.log('🏁 Bulk tagging finished (finally block)');
       setBulkTaggingState(prev => ({
         ...prev,
         isActive: false
