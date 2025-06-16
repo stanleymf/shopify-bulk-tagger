@@ -46,8 +46,10 @@ class BackgroundJobsService {
   private cancellationSignals: Map<string, boolean> = new Map(); // Track cancellation signals
 
   constructor() {
+    console.log('🔧 BackgroundJobsService constructor called');
     this.loadJobsFromStorage();
     this.resumeActiveJob();
+    console.log('✅ BackgroundJobsService initialized');
   }
 
   /**

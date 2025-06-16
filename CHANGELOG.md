@@ -5,6 +5,20 @@ All notable changes to the Bulk-Tagger project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.14.2] - 2025-01-16
+
+### Fixed
+- **CRITICAL FIX**: GraphQL customer ID format issue causing "Variable $id of type ID! was provided invalid value" errors
+- Fixed customer ID format conversion in `getSegmentCustomerIds` fallback search to return proper GID format
+- Added `ensureCustomerGID` utility function to guarantee correct customer ID format for GraphQL operations
+- Fixed customer ID format in `batchAddTags` and `batchRemoveTags` methods for both customer queries and mutations
+- All bulk tagging operations now use proper `gid://shopify/Customer/XXXXX` format instead of raw numeric IDs
+
+### Technical Details
+- Added comprehensive customer ID validation to prevent GraphQL type errors
+- Enhanced fallback search mechanism to return GID-formatted customer IDs
+- Fixed format consistency between direct segment access and search fallback methods
+
 ## [1.14.1] - 2025-01-16
 
 ### Fixed

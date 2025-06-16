@@ -53,11 +53,15 @@ export function Dashboard() {
 
   // Load segments on component mount
   useEffect(() => {
+    console.log('🎯 Dashboard useEffect called - initializing background jobs');
     loadSegments();
     
     // Load background jobs
+    console.log('📋 Loading background jobs from service...');
     const currentActiveJob = backgroundJobsService.getActiveJob();
     const allJobs = backgroundJobsService.getAllJobs();
+    console.log('📊 Found active job:', currentActiveJob?.id || 'none');
+    console.log('📈 Total jobs in history:', allJobs.length);
     
     setActiveJob(currentActiveJob);
     setJobHistory(allJobs);
@@ -522,6 +526,8 @@ export function Dashboard() {
 
   const handleTestBulkJobsSystem = () => {
     console.log('🧪 Testing Background Jobs System...');
+    console.log('🔍 backgroundJobsService:', backgroundJobsService);
+    console.log('🔍 backgroundJobsService methods:', Object.getOwnPropertyNames(Object.getPrototypeOf(backgroundJobsService)));
     
     // Create a test job
     const jobId = backgroundJobsService.startJob(

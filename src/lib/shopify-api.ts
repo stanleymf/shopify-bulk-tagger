@@ -694,6 +694,17 @@ class ShopifyAPIService {
     return this.formatTags(filtered);
   }
 
+  /**
+   * Ensure customer ID is in the correct GID format for GraphQL
+   */
+  static ensureCustomerGID(customerId: string | number): string {
+    const idStr = customerId.toString();
+    if (idStr.startsWith('gid://shopify/Customer/')) {
+      return idStr;
+    }
+    return `gid://shopify/Customer/${idStr}`;
+  }
+
   // Get customer count for a specific segment
   async getSegmentCustomerCount(segmentId: number): Promise<number> {
     if (!this.isInitialized()) {
@@ -943,7 +954,7 @@ class ShopifyAPIService {
         }
 
         const edges = response.data.customerSegment.customers.edges;
-        const batchIds = edges.map((edge: any) => edge.node.id.replace('gid://shopify/Customer/', ''));
+        const batchIds = edges.map((edge: any) => edge.node.id); // Keep full GID format
         customerIds.push(...batchIds);
 
         hasNextPage = response.data.customerSegment.customers.pageInfo.hasNextPage;
@@ -958,17 +969,68 @@ class ShopifyAPIService {
         }
 
       } catch (error) {
-        console.error(`💥 CRITICAL ERROR fetching segment customers for segment ${segmentId}:`, error);
-        console.error(`💥 Error details:`, {
-          name: error instanceof Error ? error.name : 'Unknown',
-          message: error instanceof Error ? error.message : String(error),
-          stack: error instanceof Error ? error.stack : 'No stack trace'
-        });
-        throw error;
+        console.error(`💥 ERROR fetching segment customers via direct access for segment ${segmentId}:`, error);
+        console.log(`🔄 Attempting fallback to customer search method for segment ${segmentId}...`);
+        
+        // Try fallback: get segment info and use customer search
+        try {
+          const segments = await this.getCustomerSegments();
+          const segment = segments.find(s => s.id === segmentId);
+          
+          if (!segment || !segment.query) {
+            console.error(`💥 Segment ${segmentId} not found or has no query for customer search fallback`);
+            throw new Error(`Cannot access customers for segment ${segmentId}: no direct access and no searchable query`);
+          }
+          
+          console.log(`🔍 Using customer search fallback for segment ${segmentId} with query: ${segment.query}`);
+          
+          // Translate segment query to customer search syntax
+          const searchQuery = this.translateSegmentQueryToCustomerSearch(segment.query);
+          console.log(`🔍 Translated search query: ${searchQuery}`);
+          
+          // Search for customers using the translated query
+          const customers = await this.searchCustomers(searchQuery);
+          const searchCustomerIds = customers.map(c => `gid://shopify/Customer/${c.id}`);
+          
+          console.log(`✅ Fallback search found ${searchCustomerIds.length} customers for segment ${segmentId}`);
+          
+          return searchCustomerIds.slice(0, limit); // Respect the limit
+          
+        } catch (fallbackError) {
+          console.error(`💥 Fallback also failed for segment ${segmentId}:`, fallbackError);
+          throw new Error(`Failed to fetch customers for segment ${segmentId}: Direct access failed and fallback search also failed. Original error: ${error instanceof Error ? error.message : String(error)}`);
+        }
       }
     }
 
     console.log(`🏁 getSegmentCustomerIds completed for segment ${segmentId}. Total customers: ${customerIds.length}`);
+    
+    // If we got 0 customers but the segment might have customers, try fallback
+    if (customerIds.length === 0) {
+      console.log(`⚠️ Direct access returned 0 customers for segment ${segmentId}. Checking if fallback is needed...`);
+      
+      try {
+        const segments = await this.getCustomerSegments();
+        const segment = segments.find(s => s.id === segmentId);
+        
+        if (segment && segment.customer_count && segment.customer_count > 0 && segment.query) {
+          console.log(`🔄 Segment ${segmentId} has ${segment.customer_count} customers but direct access returned 0. Trying search fallback...`);
+          
+          const searchQuery = this.translateSegmentQueryToCustomerSearch(segment.query);
+          console.log(`🔍 Using fallback search query: ${searchQuery}`);
+          
+                     const customers = await this.searchCustomers(searchQuery);
+           const searchCustomerIds = customers.map(c => `gid://shopify/Customer/${c.id}`);
+           
+           console.log(`✅ Fallback search found ${searchCustomerIds.length} customers for segment ${segmentId}`);
+           return searchCustomerIds.slice(0, limit);
+        }
+      } catch (fallbackError) {
+        console.error(`💥 Fallback attempt failed for segment ${segmentId}:`, fallbackError);
+        // Continue with original 0 result
+      }
+    }
+    
     return customerIds;
   }
 
@@ -1496,7 +1558,7 @@ class ShopifyAPIService {
 
           const customerResponse = await this.graphqlQuery<{
             customer: { id: string; tags: string[] };
-          }>(customerQuery, { id: customerId });
+          }>(customerQuery, { id: ShopifyAPIService.ensureCustomerGID(customerId) });
 
           if (customerResponse.data?.customer) {
             const currentTags = customerResponse.data.customer.tags || [];
@@ -1539,7 +1601,7 @@ class ShopifyAPIService {
               };
             }>(mutation, {
               input: {
-                id: customerId,
+                id: ShopifyAPIService.ensureCustomerGID(customerId),
                 tags: allTags
               }
             });
@@ -1638,7 +1700,7 @@ class ShopifyAPIService {
 
           const customerResponse = await this.graphqlQuery<{
             customer: { id: string; tags: string[] };
-          }>(customerQuery, { id: customerId });
+          }>(customerQuery, { id: ShopifyAPIService.ensureCustomerGID(customerId) });
 
           if (customerResponse.data?.customer) {
             const currentTags = customerResponse.data.customer.tags || [];
@@ -1681,7 +1743,7 @@ class ShopifyAPIService {
               };
             }>(mutation, {
               input: {
-                id: customerId,
+                id: ShopifyAPIService.ensureCustomerGID(customerId),
                 tags: remainingTags
               }
             });
