@@ -5,6 +5,23 @@ All notable changes to the Bulk-Tagger project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.14.5] - 2025-01-16
+
+### Changed
+- **Simplified Segment Access**: Removed complex query translation and fallback logic for customer segment access
+- **Direct Access Only**: Now only uses direct GraphQL segment access to get customer IDs, no search fallbacks
+- **No Query Translation**: Eliminated the complex segment query to customer search translation that was causing issues
+
+### Technical Details
+- Removed `translateSegmentQueryToCustomerSearch` fallback logic from `getSegmentCustomerIds`
+- Simplified approach: if direct segment access works, tag those customers; if not, show clear error
+- No more complex query parsing or customer search fallbacks that could introduce inconsistencies
+
+### User Impact
+- More predictable behavior: what you see in the segment is what gets tagged
+- Clearer error messages when segment access fails
+- Eliminates confusion from query translation mismatches
+
 ## [1.14.4] - 2025-01-16
 
 ### Added
