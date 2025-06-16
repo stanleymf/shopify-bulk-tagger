@@ -605,41 +605,91 @@ class ShopifyAPIService {
   }
 
   // Search customers with specific criteria
-  async searchCustomers(query: string): Promise<ShopifyCustomer[]> {
+  async searchCustomers(query: string, limit: number = 10000): Promise<ShopifyCustomer[]> {
     if (!this.isInitialized()) {
       throw new Error('Shopify API service not initialized. Please connect your store first.');
     }
 
+    console.log(`🔍 Searching customers with query: "${query}" (limit: ${limit})`);
+    
+    const allCustomers: ShopifyCustomer[] = [];
+    let sinceId = 0;
+    const pageSize = 250; // Maximum page size for Shopify REST API
+    
     try {
-      // Use the Cloudflare Workers proxy to avoid CORS issues
-      const proxyUrl = '/api/shopify/proxy';
-      const shopifyUrl = `${this.baseURL}/customers/search.json?query=${encodeURIComponent(query)}`;
-      
-      const response = await fetch(proxyUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          url: shopifyUrl,
-          method: 'GET',
+      while (allCustomers.length < limit) {
+        const remainingLimit = limit - allCustomers.length;
+        const currentPageSize = Math.min(pageSize, remainingLimit);
+        
+        // Build the URL with pagination parameters
+        const params = new URLSearchParams({
+          query: query,
+          limit: currentPageSize.toString(),
+        });
+        
+        if (sinceId > 0) {
+          params.append('since_id', sinceId.toString());
+        }
+        
+        const shopifyUrl = `${this.baseURL}/customers/search.json?${params.toString()}`;
+        console.log(`📄 Fetching page with since_id: ${sinceId}, page_size: ${currentPageSize}`);
+        
+        // Use the Cloudflare Workers proxy to avoid CORS issues
+        const proxyUrl = '/api/shopify/proxy';
+        
+        const response = await fetch(proxyUrl, {
+          method: 'POST',
           headers: {
-            'X-Shopify-Access-Token': this.accessToken!,
             'Content-Type': 'application/json',
           },
-        }),
-      });
+          body: JSON.stringify({
+            url: shopifyUrl,
+            method: 'GET',
+            headers: {
+              'X-Shopify-Access-Token': this.accessToken!,
+              'Content-Type': 'application/json',
+            },
+          }),
+        });
 
-      if (!response.ok) {
-        if (response.status === 401) {
-          throw new Error('Invalid access token. Please reconnect your store.');
-        } else {
-          throw new Error(`Failed to search customers: ${response.status}`);
+        if (!response.ok) {
+          if (response.status === 401) {
+            throw new Error('Invalid access token. Please reconnect your store.');
+          } else {
+            throw new Error(`Failed to search customers: ${response.status}`);
+          }
         }
-      }
 
-      const data: CustomerResponse = await response.json();
-      return data.customers;
+        const data: CustomerResponse = await response.json();
+        const customers = data.customers || [];
+        
+        console.log(`📄 Retrieved ${customers.length} customers in this page`);
+        
+        if (customers.length === 0) {
+          console.log(`🏁 No more customers found, stopping pagination`);
+          break; // No more customers to fetch
+        }
+        
+        allCustomers.push(...customers);
+        
+        // Update since_id for next page (use the last customer's ID)
+        if (customers.length > 0) {
+          sinceId = customers[customers.length - 1].id;
+        }
+        
+        // If we got fewer customers than requested, we've reached the end
+        if (customers.length < currentPageSize) {
+          console.log(`🏁 Received ${customers.length} < ${currentPageSize}, reached end of results`);
+          break;
+        }
+        
+        // Add a small delay to respect rate limits
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+      
+      console.log(`✅ Total customers found: ${allCustomers.length} (limit was ${limit})`);
+      return allCustomers;
+      
     } catch (error) {
       console.error('Error searching customers:', error);
       throw error;
@@ -772,7 +822,7 @@ class ShopifyAPIService {
    * Since direct segment access is not available in your Shopify API,
    * this will fetch customers based on the segment's query conditions
    */
-  async getSegmentCustomerIds(segmentId: number, limit: number = 30000): Promise<string[]> {
+  async getSegmentCustomerIds(segmentId: number, limit: number = 50000): Promise<string[]> {
     console.log(`🔍 Fetching customer IDs for segment ${segmentId} using customer search...`);
     
     // First, get the segment details to access its query
@@ -789,16 +839,30 @@ class ShopifyAPIService {
     }
     
     console.log(`📋 Segment "${segment.name}" query: ${segment.query}`);
+    console.log(`📊 Segment shows ${segment.customer_count || 'unknown'} customers total`);
+    
+    // Use the segment's customer count to set an appropriate limit
+    const searchLimit = segment.customer_count ? Math.min(segment.customer_count + 100, limit) : limit;
+    console.log(`🎯 Using search limit: ${searchLimit}`);
     
     // Use customer search with the segment's query
     try {
       const searchQuery = this.convertSegmentQueryToSearchQuery(segment.query);
       console.log(`🔍 Converted search query: ${searchQuery}`);
       
-      const customers = await this.searchCustomers(searchQuery);
+      const customers = await this.searchCustomers(searchQuery, searchLimit);
       const customerIds = customers.map(customer => customer.id.toString());
       
       console.log(`✅ Found ${customerIds.length} customers via search for segment ${segmentId}`);
+      
+      // Log comparison with expected count
+      if (segment.customer_count && Math.abs(customerIds.length - segment.customer_count) > 10) {
+        console.warn(`⚠️  Search found ${customerIds.length} customers but segment shows ${segment.customer_count}. This might be due to:`);
+        console.warn(`   - Recent segment changes`);
+        console.warn(`   - Query translation differences`);
+        console.warn(`   - Search API limitations`);
+      }
+      
       return customerIds;
       
     } catch (error) {

@@ -5,6 +5,31 @@ All notable changes to the Bulk-Tagger project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.14.7] - 2025-01-16
+
+### Critical Fix: Added Pagination Support for Large Segments  
+- **Issue**: Customer search was only returning 50 customers from 4,874 customer segments due to REST API pagination limits
+- **Root Cause**: Shopify Customer Search REST API returns max 250 results per request and defaults to 50 without pagination
+- **Solution**: Implemented automatic pagination with `since_id` cursor to fetch all customers from large segments
+- **Performance**: Added 500ms delays between requests to respect Shopify rate limits
+- **Smart Limits**: Uses segment's actual customer count to optimize search limits (segment_count + 100 buffer)
+- **Enhanced Logging**: Added detailed pagination progress and customer count comparison logs
+- **Result**: Now processes all 4,874 customers instead of just 50 customers
+
+### Technical Details
+- Enhanced `searchCustomers()` method with pagination support (up to 50,000 customers)
+- Added intelligent limit calculation based on segment metadata
+- Implemented `since_id` cursor-based pagination for complete result sets  
+- Added rate limiting (500ms delays) between page requests
+- Enhanced logging to track pagination progress and result validation
+- Added customer count discrepancy warnings for debugging
+
+### Deployment
+- **Status**: ✅ Successfully deployed to [https://bulk-tagger.stanleytan92.workers.dev](https://bulk-tagger.stanleytan92.workers.dev)
+- **Version ID**: ed2977b6-34d3-4ac6-b0ec-1f27b38e6b40
+- **Deployment Time**: 2025-01-16 11:48 UTC
+- **Build Size**: 81.15 KiB (15.57 KiB gzipped)
+
 ## [1.14.6] - 2025-01-16
 
 ### Critical Fix: Switched to Customer Search API
