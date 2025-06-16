@@ -924,7 +924,7 @@ class ShopifyAPIService {
     const errors: string[] = [];
     let processedCount = 0;
     let skippedCount = 0;
-    const batchSize = 10; // Process in smaller batches to avoid rate limits
+    const batchSize = 20; // Larger batches for better performance
     const totalCustomers = totalForProgress || customerIds.length;
 
     // Handle checkpoint resumption
@@ -1039,8 +1039,10 @@ class ShopifyAPIService {
             skippedCount++;
           }
 
-          // Update progress for each customer
-          onProgress?.(processedCount, totalCustomers, skippedCount, `Tagged customer - ${processedCount}/${totalCustomers} processed, ${skippedCount} skipped`);
+          // Update progress for each customer (but only every 5th to reduce UI lag)
+          if (processedCount % 5 === 0 || processedCount === 1) {
+            onProgress?.(processedCount, totalCustomers, skippedCount, `Tagged customer - ${processedCount}/${totalCustomers} processed, ${skippedCount} skipped`);
+          }
           
         } catch (error) {
           errors.push(`Failed to update customer ${customerId}: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -1057,7 +1059,7 @@ class ShopifyAPIService {
 
       // Add delay between batches to respect rate limits
       if (i + batchSize < remainingCustomerIds.length) {
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise(resolve => setTimeout(resolve, 200)); // Faster processing
         onProgress?.(processedCount, totalCustomers, skippedCount, `Processed batch ${currentBatchIndex + 1}/${Math.ceil(remainingCustomerIds.length / batchSize)} (checkpoint saved)`);
       }
     }
@@ -1084,7 +1086,7 @@ class ShopifyAPIService {
     const errors: string[] = [];
     let processedCount = 0;
     let skippedCount = 0;
-    const batchSize = 10;
+    const batchSize = 20; // Larger batches for better performance
     const totalCustomers = totalForProgress || customerIds.length;
 
     onProgress?.(0, totalCustomers, 0, `Starting to remove tags from ${customerIds.length} customers...`);
@@ -1180,8 +1182,10 @@ class ShopifyAPIService {
             skippedCount++;
           }
 
-          // Update progress for each customer
-          onProgress?.(processedCount, totalCustomers, skippedCount, `Untagged customer - ${processedCount}/${totalCustomers} processed, ${skippedCount} skipped`);
+          // Update progress for each customer (but only every 5th to reduce UI lag)
+          if (processedCount % 5 === 0 || processedCount === 1) {
+            onProgress?.(processedCount, totalCustomers, skippedCount, `Untagged customer - ${processedCount}/${totalCustomers} processed, ${skippedCount} skipped`);
+          }
           
         } catch (error) {
           errors.push(`Failed to update customer ${customerId}: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -1192,7 +1196,7 @@ class ShopifyAPIService {
 
       // Add delay between batches to respect rate limits
       if (i + batchSize < customerIds.length) {
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise(resolve => setTimeout(resolve, 200)); // Faster processing
         onProgress?.(processedCount, totalCustomers, skippedCount, `Processed batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(customerIds.length / batchSize)}`);
       }
     }
