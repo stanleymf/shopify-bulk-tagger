@@ -2,7 +2,7 @@
   "name": "bulk-tagger",
   "type": "module",
   "private": true,
-  "version": "1.14.2",
+  "version": "1.14.3",
   "description": "Bulk customer tag management for Shopify stores",
   "scripts": {
     "check": "tsc -b",

@@ -1193,15 +1193,15 @@ class ShopifyAPIService {
       };
     }
 
-    // Use official count if available, otherwise use search results count
-    const totalForProgress = officialSegmentCount > 0 ? officialSegmentCount : customerIds.length;
+    // Always use actual customer count for progress tracking to avoid progress counter bugs
+    const totalForProgress = customerIds.length;
     
     // Log the discrepancy if there is one
     if (officialSegmentCount > 0 && officialSegmentCount !== customerIds.length) {
       console.warn(`⚠️  Segment count discrepancy detected:`);
       console.warn(`   Official segment count: ${officialSegmentCount}`);
-      console.warn(`   Search results count: ${customerIds.length}`);
-      console.warn(`   Using official count (${officialSegmentCount}) for progress tracking`);
+      console.warn(`   Actual processable customers: ${customerIds.length}`);
+      console.warn(`   Using actual count (${customerIds.length}) for accurate progress tracking`);
       
       onProgress?.(0, totalForProgress, 0, `Found ${customerIds.length} processable customers (${officialSegmentCount} total in segment). Starting tag addition...`);
     } else {
@@ -1256,15 +1256,15 @@ class ShopifyAPIService {
       };
     }
 
-    // Use official count if available, otherwise use search results count
-    const totalForProgress = officialSegmentCount > 0 ? officialSegmentCount : customerIds.length;
+    // Always use actual customer count for progress tracking to avoid progress counter bugs
+    const totalForProgress = customerIds.length;
     
     // Log the discrepancy if there is one
     if (officialSegmentCount > 0 && officialSegmentCount !== customerIds.length) {
       console.warn(`⚠️  Segment count discrepancy detected:`);
       console.warn(`   Official segment count: ${officialSegmentCount}`);
-      console.warn(`   Search results count: ${customerIds.length}`);
-      console.warn(`   Using official count (${officialSegmentCount}) for progress tracking`);
+      console.warn(`   Actual processable customers: ${customerIds.length}`);
+      console.warn(`   Using actual count (${customerIds.length}) for accurate progress tracking`);
       
       onProgress?.(0, totalForProgress, 0, `Found ${customerIds.length} processable customers (${officialSegmentCount} total in segment). Starting tag removal...`);
     } else {

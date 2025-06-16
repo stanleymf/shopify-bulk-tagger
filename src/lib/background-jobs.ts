@@ -123,7 +123,10 @@ class BackgroundJobsService {
     const job = this.jobs.get(jobId);
     if (!job) return;
 
-    job.progress = { current, total, skipped, message };
+    // Ensure progress doesn't exceed total to prevent counter bugs like "11/8"
+    const safeCurrent = Math.min(current, total);
+    
+    job.progress = { current: safeCurrent, total, skipped, message };
     job.lastUpdate = new Date().toISOString();
     
     this.jobs.set(jobId, job);

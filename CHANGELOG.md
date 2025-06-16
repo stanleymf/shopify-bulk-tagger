@@ -5,6 +5,19 @@ All notable changes to the Bulk-Tagger project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.14.3] - 2025-01-16
+
+### Fixed
+- **Progress Counter Bug**: Fixed issue where progress showed more processed customers than total (e.g., "11/8")
+- Fixed progress calculation to prevent counters from exceeding total customer count
+- Enhanced progress tracking safety with bounds checking to avoid display anomalies
+- Fixed segment count discrepancy handling to always use actual processable customer count for accurate progress
+
+### Technical Details
+- Added safe progress bounds checking in `updateJobProgress` to cap current at total
+- Modified total progress calculation to use actual customer IDs count instead of segment metadata count
+- Improved progress tracking reliability for consistent user experience
+
 ## [1.14.2] - 2025-01-16
 
 ### Fixed
