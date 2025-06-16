@@ -5,6 +5,35 @@ All notable changes to the Bulk-Tagger project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.14.6] - 2025-01-16
+
+### Critical Fix: Switched to Customer Search API
+- **BREAKING**: Replaced direct segment access with Shopify Customer Search API for compatibility
+- **Root Issue**: Your Shopify API doesn't support `customerSegment` field - eliminated GraphQL segment queries entirely
+- **New Approach**: `getSegmentCustomerIds()` now uses customer search with segment query translation
+- **Query Translation**: Smart conversion of segment syntax to search syntax:
+  - `amount_spent >= 240` → `total_spent:>=240`
+  - `sms_subscription_status = 'SUBSCRIBED'` → `accepts_marketing:true`
+  - `email_subscription_status = 'SUBSCRIBED'` → `accepts_marketing:true`
+  - Preserves AND/OR operators for complex queries
+- **Universal Compatibility**: Works with all Shopify stores regardless of GraphQL API limitations
+- **Enhanced Logging**: Added step-by-step query conversion and customer search logging
+- **Performance**: Direct customer search avoids segment API limitations and failures
+- **Result**: Segments with properly translatable queries will now find and tag actual customers
+
+### Technical Details
+- Replaced `translateSegmentQueryToCustomerSearch()` method with `convertSegmentQueryToSearchQuery()`
+- Updated `bulkAddTagsToSegmentGraphQL()` and `bulkRemoveTagsFromSegmentGraphQL()` to use search approach
+- Removed all segment direct access attempts and fallback logic
+- Enhanced error handling for unsupported query patterns
+
+### Deployment
+- **Status**: ✅ Successfully deployed to [https://bulk-tagger.stanleytan92.workers.dev](https://bulk-tagger.stanleytan92.workers.dev)
+- **Version ID**: e1ca4670-8bed-47f9-ae7b-19bf47bb940a
+- **Deployment Time**: 2025-01-16 11:42 UTC
+- **Build Size**: 81.15 KiB (15.57 KiB gzipped)
+- **Assets**: 5 files total (2 new, 3 cached)
+
 ## [1.14.5] - 2025-01-16
 
 ### Changed

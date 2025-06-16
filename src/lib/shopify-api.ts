@@ -767,674 +767,82 @@ class ShopifyAPIService {
     await migrationService.saveSegmentsAsync(updatedSegments);
   }
 
-  // Bulk tagging methods for customer segments
-  
   /**
-   * Translate segment query syntax to customer search syntax
-   * Shopify segments use different query syntax than customer search
-   */
-  private translateSegmentQueryToCustomerSearch(segmentQuery: string): string {
-    if (!segmentQuery) {
-      return 'state:enabled'; // Default fallback
-    }
-
-    console.log(`Translating segment query: "${segmentQuery}"`);
-
-    // Common segment query patterns and their customer search equivalents
-    const translations: Array<{ pattern: RegExp; replacement: string | ((match: string, ...groups: string[]) => string) }> = [
-      // Email domain queries
-      { 
-        pattern: /customer_email_domain\s*=\s*'([^']+)'/gi, 
-        replacement: (match, domain) => `email:*@${domain}` 
-      },
-      { 
-        pattern: /customer_email_domain\s*=\s*"([^"]+)"/gi, 
-        replacement: (match, domain) => `email:*@${domain}` 
-      },
-      
-      // Email queries
-      { 
-        pattern: /customer_email\s*=\s*'([^']+)'/gi, 
-        replacement: (match, email) => `email:${email}` 
-      },
-      { 
-        pattern: /customer_email\s*=\s*"([^"]+)"/gi, 
-        replacement: (match, email) => `email:${email}` 
-      },
-      
-      // Customer state queries
-      { 
-        pattern: /customer_state\s*=\s*'enabled'/gi, 
-        replacement: 'state:enabled' 
-      },
-      { 
-        pattern: /customer_state\s*=\s*'disabled'/gi, 
-        replacement: 'state:disabled' 
-      },
-      
-      // Tag queries
-      { 
-        pattern: /customer_tags\s*contains\s*'([^']+)'/gi, 
-        replacement: (match, tag) => `tag:${tag}` 
-      },
-      { 
-        pattern: /customer_tags\s*contains\s*"([^"]+)"/gi, 
-        replacement: (match, tag) => `tag:${tag}` 
-      },
-      
-      // Location queries
-      { 
-        pattern: /customer_city\s*=\s*'([^']+)'/gi, 
-        replacement: (match, city) => `address1:${city}` 
-      },
-      { 
-        pattern: /customer_country\s*=\s*'([^']+)'/gi, 
-        replacement: (match, country) => `country:${country}` 
-      },
-      
-      // Date queries (simplified)
-      { 
-        pattern: /customer_created_at\s*>\s*'([^']+)'/gi, 
-        replacement: (match, date) => `created_at:>${date}` 
-      },
-      { 
-        pattern: /customer_updated_at\s*>\s*'([^']+)'/gi, 
-        replacement: (match, date) => `updated_at:>${date}` 
-      },
-    ];
-
-    let translatedQuery = segmentQuery;
-
-    // Apply translations
-    for (const { pattern, replacement } of translations) {
-      if (typeof replacement === 'function') {
-        translatedQuery = translatedQuery.replace(pattern, replacement);
-      } else {
-        translatedQuery = translatedQuery.replace(pattern, replacement);
-      }
-    }
-
-    // If no translation was applied, try some fallback approaches
-    if (translatedQuery === segmentQuery) {
-      console.warn(`No translation found for segment query: "${segmentQuery}"`);
-      
-      // Try to extract email domain from common patterns
-      const emailDomainMatch = segmentQuery.match(/['"]([^'"]*@[^'"]+)['"]/);
-      if (emailDomainMatch) {
-        const email = emailDomainMatch[1];
-        if (email.includes('@')) {
-          const domain = email.split('@')[1];
-          translatedQuery = `email:*@${domain}`;
-          console.log(`Extracted email domain pattern: ${translatedQuery}`);
-        }
-      }
-      
-      // If still no match, throw an error instead of using a fallback
-      // This will help identify segments that can't be properly monitored
-      if (translatedQuery === segmentQuery) {
-        console.error(`❌ Cannot translate segment query: "${segmentQuery}"`);
-        console.error(`❌ This segment cannot be monitored for changes due to unsupported query syntax`);
-        throw new Error(`Unsupported segment query syntax: "${segmentQuery}". This segment cannot be monitored for real-time changes.`);
-      }
-    }
-
-    console.log(`Translated query: "${segmentQuery}" -> "${translatedQuery}"`);
-    return translatedQuery;
-  }
-
-  /**
-   * Get customer IDs from a segment (without full customer data)
-   * Uses direct GraphQL segment customer access - let Shopify handle the query
+   * Get customer IDs from a segment using customer search API
+   * Since direct segment access is not available in your Shopify API,
+   * this will fetch customers based on the segment's query conditions
    */
   async getSegmentCustomerIds(segmentId: number, limit: number = 30000): Promise<string[]> {
-    if (!this.isInitialized()) {
-      throw new Error('Shopify API service not initialized');
-    }
-
-    console.log(`🔍 Fetching customer IDs for segment ${segmentId} with limit ${limit} using direct segment access...`);
-
-    const query = `
-      query getSegmentCustomers($segmentId: ID!, $first: Int!, $after: String) {
-        customerSegment(id: $segmentId) {
-          customers(first: $first, after: $after) {
-            edges {
-              node {
-                id
-              }
-            }
-            pageInfo {
-              hasNextPage
-              endCursor
-            }
-          }
-        }
-      }
-    `;
-
-    const customerIds: string[] = [];
-    let hasNextPage = true;
-    let cursor: string | null = null;
-    const batchSize = Math.min(250, limit); // GraphQL limit is 250
-
-    console.log(`🔍 Starting customer fetch loop for segment ${segmentId}`);
-
-    while (hasNextPage && customerIds.length < limit) {
-      const variables: any = {
-        segmentId: `gid://shopify/CustomerSegment/${segmentId}`,
-        first: Math.min(batchSize, limit - customerIds.length)
-      };
-
-      if (cursor) {
-        variables.after = cursor;
-      }
-
-      console.log(`🔍 Making GraphQL query for segment ${segmentId} with variables:`, JSON.stringify(variables, null, 2));
-
-      try {
-        console.log(`🔍 About to call graphqlQuery for segment ${segmentId}...`);
-        const response = await this.graphqlQuery<{
-          customerSegment: {
-            customers: {
-              edges: Array<{ node: { id: string } }>;
-              pageInfo: { hasNextPage: boolean; endCursor?: string };
-            };
-          };
-        }>(query, variables);
-
-        if (response.errors) {
-          console.error('GraphQL errors:', response.errors);
-          throw new Error(`Failed to fetch segment customers: ${response.errors.map(e => e.message).join(', ')}`);
-        }
-
-        console.log(`🔍 GraphQL query completed for segment ${segmentId}. Response:`, JSON.stringify(response.data, null, 2));
-        
-        if (!response.data?.customerSegment?.customers?.edges) {
-          console.warn(`⚠️ No customers found for segment ${segmentId}. Data structure:`, JSON.stringify(response.data, null, 2));
-          break;
-        }
-
-        const edges = response.data.customerSegment.customers.edges;
-        const batchIds = edges.map((edge: any) => edge.node.id); // Keep full GID format
-        customerIds.push(...batchIds);
-
-        hasNextPage = response.data.customerSegment.customers.pageInfo.hasNextPage;
-        cursor = response.data.customerSegment.customers.pageInfo.endCursor || null;
-
-        console.log(`✅ Fetched ${batchIds.length} customer IDs (total: ${customerIds.length}) for segment ${segmentId}`);
-
-        // Add delay between pages to respect rate limits
-        if (hasNextPage) {
-          const delay = limit > 10000 ? 300 : 500;
-          await new Promise(resolve => setTimeout(resolve, delay));
-        }
-
-      } catch (error) {
-        console.error(`💥 ERROR fetching segment customers via direct access for segment ${segmentId}:`, error);
-        console.log(`❌ Direct segment access failed. Skipping complex fallback as requested by user.`);
-        throw new Error(`Cannot access customers for segment ${segmentId} via direct GraphQL access: ${error instanceof Error ? error.message : String(error)}`);
-      }
-    }
-
-    console.log(`🏁 getSegmentCustomerIds completed for segment ${segmentId}. Total customers: ${customerIds.length}`);
+    console.log(`🔍 Fetching customer IDs for segment ${segmentId} using customer search...`);
     
-    // Return whatever customers we found via direct access (could be 0)
-    if (customerIds.length === 0) {
-      console.log(`⚠️ Direct access returned 0 customers for segment ${segmentId}. No fallback attempted as requested.`);
+    // First, get the segment details to access its query
+    const segments = await this.getStoredSegments();
+    const segment = segments.find(s => s.id === segmentId);
+    
+    if (!segment) {
+      throw new Error(`Segment ${segmentId} not found in stored segments`);
     }
     
-    return customerIds;
-  }
-
-  /**
-   * Bulk add tags to all customers in a segment
-   */
-  async bulkAddTagsToSegment(
-    segmentId: number, 
-    tagsToAdd: string[], 
-    onProgress?: (current: number, total: number, skipped: number, message: string) => void,
-    cancellationChecker?: () => boolean
-  ): Promise<{
-    success: boolean;
-    processedCount: number;
-    skippedCount: number;
-    errors: string[];
-  }> {
-    if (!this.isInitialized()) {
-      throw new Error('Shopify API service not initialized');
+    if (!segment.query || segment.query.trim() === '') {
+      console.warn(`Segment ${segmentId} has no query - cannot fetch customers`);
+      return [];
     }
-
-    if (!tagsToAdd.length) {
-      throw new Error('No tags provided to add');
-    }
-
-    // Check for cancellation before starting
-    if (cancellationChecker && cancellationChecker()) {
-      return {
-        success: false,
-        processedCount: 0,
-        skippedCount: 0,
-        errors: ['Operation cancelled before starting']
-      };
-    }
-
+    
+    console.log(`📋 Segment "${segment.name}" query: ${segment.query}`);
+    
+    // Use customer search with the segment's query
     try {
-      // Try GraphQL first, fallback to REST if it fails
-      try {
-        return await this.bulkAddTagsToSegmentGraphQL(segmentId, tagsToAdd, onProgress, cancellationChecker);
-      } catch (graphqlError) {
-        console.warn('GraphQL bulk tagging failed, trying REST API fallback:', graphqlError);
-        return await this.bulkAddTagsToSegmentREST(segmentId, tagsToAdd, onProgress);
-      }
-    } catch (error) {
-      console.error('Bulk add tags failed:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Bulk remove tags from all customers in a segment
-   */
-  async bulkRemoveTagsFromSegment(
-    segmentId: number, 
-    tagsToRemove: string[], 
-    onProgress?: (current: number, total: number, skipped: number, message: string) => void,
-    cancellationChecker?: () => boolean
-  ): Promise<{
-    success: boolean;
-    processedCount: number;
-    skippedCount: number;
-    errors: string[];
-  }> {
-    if (!this.isInitialized()) {
-      throw new Error('Shopify API service not initialized');
-    }
-
-    if (!tagsToRemove.length) {
-      throw new Error('No tags provided to remove');
-    }
-
-    // Check for cancellation before starting
-    if (cancellationChecker && cancellationChecker()) {
-      return {
-        success: false,
-        processedCount: 0,
-        skippedCount: 0,
-        errors: ['Operation cancelled before starting']
-      };
-    }
-
-    try {
-      // Try GraphQL first, fallback to REST if it fails
-      try {
-        return await this.bulkRemoveTagsFromSegmentGraphQL(segmentId, tagsToRemove, onProgress, cancellationChecker);
-      } catch (graphqlError) {
-        console.warn('GraphQL bulk tagging failed, trying REST API fallback:', graphqlError);
-        return await this.bulkRemoveTagsFromSegmentREST(segmentId, tagsToRemove, onProgress);
-      }
-    } catch (error) {
-      console.error('Bulk remove tags failed:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * GraphQL implementation for bulk add tags
-   */
-  private async bulkAddTagsToSegmentGraphQL(
-    segmentId: number, 
-    tagsToAdd: string[], 
-    onProgress?: (current: number, total: number, skipped: number, message: string) => void,
-    cancellationChecker?: () => boolean
-  ): Promise<{
-    success: boolean;
-    processedCount: number;
-    skippedCount: number;
-    errors: string[];
-  }> {
-    // Check for cancellation before starting
-    if (cancellationChecker && cancellationChecker()) {
-      return {
-        success: false,
-        processedCount: 0,
-        skippedCount: 0,
-        errors: ['Operation cancelled before starting']
-      };
-    }
-
-    // Get the official segment count first for accurate progress tracking
-    onProgress?.(0, 0, 0, 'Getting official segment count...');
-    let officialSegmentCount = 0;
-    try {
-      officialSegmentCount = await this.getSegmentCustomerCount(segmentId);
-      console.log(`Official segment count: ${officialSegmentCount}`);
-    } catch (error) {
-      console.warn('Could not get official segment count, will use search results count:', error);
-    }
-
-    // Check for cancellation after getting count
-    if (cancellationChecker && cancellationChecker()) {
-      return {
-        success: false,
-        processedCount: 0,
-        skippedCount: 0,
-        errors: ['Operation cancelled during initialization']
-      };
-    }
-
-    // Get customer IDs from the segment
-    onProgress?.(0, officialSegmentCount || 0, 0, 'Fetching customer list from segment...');
-    const customerIds = await this.getSegmentCustomerIds(segmentId);
-    
-    if (!customerIds.length) {
-      return {
-        success: true,
-        processedCount: 0,
-        skippedCount: 0,
-        errors: ['No customers found in this segment']
-      };
-    }
-
-    // Check for cancellation after getting customer IDs
-    if (cancellationChecker && cancellationChecker()) {
-      return {
-        success: false,
-        processedCount: 0,
-        skippedCount: 0,
-        errors: ['Operation cancelled after fetching customer list']
-      };
-    }
-
-    // Always use actual customer count for progress tracking to avoid progress counter bugs
-    const totalForProgress = customerIds.length;
-    
-    // Log the discrepancy if there is one
-    if (officialSegmentCount > 0 && officialSegmentCount !== customerIds.length) {
-      console.warn(`⚠️  Segment count discrepancy detected:`);
-      console.warn(`   Official segment count: ${officialSegmentCount}`);
-      console.warn(`   Actual processable customers: ${customerIds.length}`);
-      console.warn(`   Using actual count (${customerIds.length}) for accurate progress tracking`);
+      const searchQuery = this.convertSegmentQueryToSearchQuery(segment.query);
+      console.log(`🔍 Converted search query: ${searchQuery}`);
       
-      onProgress?.(0, totalForProgress, 0, `Found ${customerIds.length} processable customers (${officialSegmentCount} total in segment). Starting tag addition...`);
-    } else {
-      onProgress?.(0, totalForProgress, 0, `Found ${customerIds.length} customers. Starting tag addition...`);
-    }
-
-    // Use batch processing for GraphQL (more reliable than bulk operations)
-    return await this.batchAddTags(
-      customerIds, 
-      tagsToAdd, 
-      onProgress, 
-      totalForProgress, 
-      cancellationChecker
-      // Note: Checkpoint functionality will be added when integrated with background jobs
-    );
-  }
-
-  /**
-   * GraphQL implementation for bulk remove tags
-   */
-  private async bulkRemoveTagsFromSegmentGraphQL(
-    segmentId: number, 
-    tagsToRemove: string[], 
-    onProgress?: (current: number, total: number, skipped: number, message: string) => void,
-    cancellationChecker?: () => boolean
-  ): Promise<{
-    success: boolean;
-    processedCount: number;
-    skippedCount: number;
-    errors: string[];
-  }> {
-    // Get the official segment count first for accurate progress tracking
-    onProgress?.(0, 0, 0, 'Getting official segment count...');
-    let officialSegmentCount = 0;
-    try {
-      officialSegmentCount = await this.getSegmentCustomerCount(segmentId);
-      console.log(`Official segment count: ${officialSegmentCount}`);
+      const customers = await this.searchCustomers(searchQuery);
+      const customerIds = customers.map(customer => customer.id.toString());
+      
+      console.log(`✅ Found ${customerIds.length} customers via search for segment ${segmentId}`);
+      return customerIds;
+      
     } catch (error) {
-      console.warn('Could not get official segment count, will use search results count:', error);
+      console.error(`❌ Failed to search customers for segment ${segmentId}:`, error);
+      throw new Error(`Failed to fetch customers for segment ${segmentId}: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
+  }
 
-    // Get customer IDs from the segment
-    onProgress?.(0, officialSegmentCount || 0, 0, 'Fetching customer list from segment...');
-    const customerIds = await this.getSegmentCustomerIds(segmentId);
+  /**
+   * Convert segment query syntax to customer search syntax
+   * This handles the basic query conversions for common segment conditions
+   */
+  private convertSegmentQueryToSearchQuery(segmentQuery: string): string {
+    console.log(`🔄 Converting segment query: "${segmentQuery}"`);
     
-    if (!customerIds.length) {
-      return {
-        success: true,
-        processedCount: 0,
-        skippedCount: 0,
-        errors: ['No customers found in this segment']
-      };
-    }
-
-    // Always use actual customer count for progress tracking to avoid progress counter bugs
-    const totalForProgress = customerIds.length;
+    let searchQuery = segmentQuery;
     
-    // Log the discrepancy if there is one
-    if (officialSegmentCount > 0 && officialSegmentCount !== customerIds.length) {
-      console.warn(`⚠️  Segment count discrepancy detected:`);
-      console.warn(`   Official segment count: ${officialSegmentCount}`);
-      console.warn(`   Actual processable customers: ${customerIds.length}`);
-      console.warn(`   Using actual count (${customerIds.length}) for accurate progress tracking`);
-      
-      onProgress?.(0, totalForProgress, 0, `Found ${customerIds.length} processable customers (${officialSegmentCount} total in segment). Starting tag removal...`);
-    } else {
-      onProgress?.(0, totalForProgress, 0, `Found ${customerIds.length} customers. Starting tag removal...`);
-    }
-
-    // Use batch processing for GraphQL (more reliable than bulk operations)
-    return await this.batchRemoveTags(customerIds, tagsToRemove, onProgress, totalForProgress, cancellationChecker);
-  }
-
-  /**
-   * REST API fallback for bulk add tags
-   */
-  private async bulkAddTagsToSegmentREST(
-    segmentId: number, 
-    tagsToAdd: string[], 
-    onProgress?: (current: number, total: number, skipped: number, message: string) => void
-  ): Promise<{
-    success: boolean;
-    processedCount: number;
-    skippedCount: number;
-    errors: string[];
-  }> {
-    // Get customers using REST API
-    const customers = await this.getSegmentCustomersREST(segmentId);
+    // Handle common segment query patterns
+    // amount_spent >= X -> total_spent:>=X
+    searchQuery = searchQuery.replace(/amount_spent\s*>=\s*(\d+)/g, 'total_spent:>=$1');
+    searchQuery = searchQuery.replace(/amount_spent\s*<=\s*(\d+)/g, 'total_spent:<=$1');
+    searchQuery = searchQuery.replace(/amount_spent\s*>\s*(\d+)/g, 'total_spent:>$1');
+    searchQuery = searchQuery.replace(/amount_spent\s*<\s*(\d+)/g, 'total_spent:<$1');
+    searchQuery = searchQuery.replace(/amount_spent\s*=\s*(\d+)/g, 'total_spent:$1');
     
-    if (!customers.length) {
-      return {
-        success: true,
-        processedCount: 0,
-        skippedCount: 0,
-        errors: ['No customers found in this segment']
-      };
-    }
-
-    return await this.batchAddTagsREST(customers, tagsToAdd, onProgress);
-  }
-
-  /**
-   * REST API fallback for bulk remove tags
-   */
-  private async bulkRemoveTagsFromSegmentREST(
-    segmentId: number, 
-    tagsToRemove: string[], 
-    onProgress?: (current: number, total: number, skipped: number, message: string) => void
-  ): Promise<{
-    success: boolean;
-    processedCount: number;
-    skippedCount: number;
-    errors: string[];
-  }> {
-    // Get customers using REST API
-    const customers = await this.getSegmentCustomersREST(segmentId);
+    // sms_subscription_status = 'SUBSCRIBED' -> accepts_marketing:true
+    searchQuery = searchQuery.replace(/sms_subscription_status\s*=\s*['"]SUBSCRIBED['"]?/gi, 'accepts_marketing:true');
+    searchQuery = searchQuery.replace(/sms_subscription_status\s*=\s*['"]UNSUBSCRIBED['"]?/gi, 'accepts_marketing:false');
     
-    if (!customers.length) {
-      return {
-        success: true,
-        processedCount: 0,
-        skippedCount: 0,
-        errors: ['No customers found in this segment']
-      };
-    }
-
-    return await this.batchRemoveTagsREST(customers, tagsToRemove, onProgress);
+    // email_subscription_status = 'SUBSCRIBED' -> accepts_marketing:true  
+    searchQuery = searchQuery.replace(/email_subscription_status\s*=\s*['"]SUBSCRIBED['"]?/gi, 'accepts_marketing:true');
+    searchQuery = searchQuery.replace(/email_subscription_status\s*=\s*['"]UNSUBSCRIBED['"]?/gi, 'accepts_marketing:false');
+    
+    // Handle AND/OR operators (keep as is, Shopify search supports them)
+    searchQuery = searchQuery.replace(/\s+AND\s+/gi, ' AND ');
+    searchQuery = searchQuery.replace(/\s+OR\s+/gi, ' OR ');
+    
+    // Clean up extra whitespace
+    searchQuery = searchQuery.replace(/\s+/g, ' ').trim();
+    
+    console.log(`✅ Converted to search query: "${searchQuery}"`);
+    return searchQuery;
   }
 
-  /**
-   * Get segment customers using REST API (fallback)
-   */
-  private async getSegmentCustomersREST(segmentId: number): Promise<ShopifyCustomer[]> {
-    // Note: REST API doesn't have direct segment customer access
-    // This is a limitation - we'll need to get all customers and filter
-    // For now, we'll use the existing getSegmentCustomers method
-    return await this.getSegmentCustomers(segmentId);
-  }
-
-  /**
-   * Batch add tags using REST API
-   */
-  private async batchAddTagsREST(customers: ShopifyCustomer[], tagsToAdd: string[], onProgress?: (current: number, total: number, skipped: number, message: string) => void): Promise<{
-    success: boolean;
-    processedCount: number;
-    skippedCount: number;
-    errors: string[];
-  }> {
-    const errors: string[] = [];
-    let processedCount = 0;
-    let skippedCount = 0;
-    const batchSize = 5; // Smaller batches for REST API
-    const totalCustomers = customers.length;
-
-    onProgress?.(0, totalCustomers, 0, `Starting to add tags to ${totalCustomers} customers via REST API...`);
-
-    for (let i = 0; i < customers.length; i += batchSize) {
-      const batch = customers.slice(i, i + batchSize);
-      
-      // Process each customer in the batch
-      await Promise.all(batch.map(async (customer, index) => {
-        try {
-          // Check if customer already has all the tags
-          const currentTags = ShopifyAPIService.parseTags(customer.tags);
-          const tagsToActuallyAdd = tagsToAdd.filter(tag => !currentTags.includes(tag));
-          
-          if (tagsToActuallyAdd.length === 0) {
-            // All tags already exist, skip this customer
-            skippedCount++;
-            const currentProgress = i + index + 1;
-            onProgress?.(currentProgress, totalCustomers, skippedCount, `Skipped customer ${currentProgress}/${totalCustomers} (already has tags) (REST)`);
-            return;
-          }
-
-          // Add only the tags that don't already exist
-          const allTags = [...currentTags, ...tagsToActuallyAdd];
-          const updatedTagsString = ShopifyAPIService.formatTags(allTags);
-          
-          await this.updateCustomerTagsREST(customer.id, updatedTagsString);
-          processedCount++;
-          
-          // Update progress for each customer
-          const currentProgress = i + index + 1;
-          onProgress?.(currentProgress, totalCustomers, skippedCount, `Tagged customer ${currentProgress}/${totalCustomers} (REST)`);
-          
-        } catch (error) {
-          errors.push(`Failed to update customer ${customer.id}: ${error instanceof Error ? error.message : 'Unknown error'}`);
-          skippedCount++;
-          onProgress?.(i + index + 1, totalCustomers, skippedCount, `Failed to tag customer ${i + index + 1}/${totalCustomers}`);
-        }
-      }));
-
-      // Add delay between batches to respect rate limits
-      if (i + batchSize < customers.length) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        onProgress?.(Math.min(i + batchSize, totalCustomers), totalCustomers, skippedCount, `Processed batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(totalCustomers / batchSize)} (REST)`);
-      }
-    }
-
-    onProgress?.(processedCount, totalCustomers, skippedCount, `Completed! Successfully tagged ${processedCount}/${totalCustomers} customers via REST API, skipped ${skippedCount}`);
-
-    return {
-      success: errors.length === 0,
-      processedCount,
-      skippedCount,
-      errors
-    };
-  }
-
-  /**
-   * Batch remove tags using REST API
-   */
-  private async batchRemoveTagsREST(customers: ShopifyCustomer[], tagsToRemove: string[], onProgress?: (current: number, total: number, skipped: number, message: string) => void): Promise<{
-    success: boolean;
-    processedCount: number;
-    skippedCount: number;
-    errors: string[];
-  }> {
-    const errors: string[] = [];
-    let processedCount = 0;
-    let skippedCount = 0;
-    const batchSize = 5;
-    const totalCustomers = customers.length;
-
-    onProgress?.(0, totalCustomers, 0, `Starting to remove tags from ${totalCustomers} customers via REST API...`);
-
-    for (let i = 0; i < customers.length; i += batchSize) {
-      const batch = customers.slice(i, i + batchSize);
-      
-      // Process each customer in the batch
-      await Promise.all(batch.map(async (customer, index) => {
-        try {
-          // Check if customer has any of the tags to remove
-          const currentTags = ShopifyAPIService.parseTags(customer.tags);
-          const tagsToActuallyRemove = tagsToRemove.filter(tag => currentTags.includes(tag));
-          
-          if (tagsToActuallyRemove.length === 0) {
-            // None of the tags exist, skip this customer
-            skippedCount++;
-            const currentProgress = i + index + 1;
-            onProgress?.(currentProgress, totalCustomers, skippedCount, `Skipped customer ${currentProgress}/${totalCustomers} (doesn't have tags) (REST)`);
-            return;
-          }
-
-          // Remove only the tags that actually exist
-          const remainingTags = currentTags.filter(tag => !tagsToRemove.includes(tag));
-          const updatedTagsString = ShopifyAPIService.formatTags(remainingTags);
-          
-          await this.updateCustomerTagsREST(customer.id, updatedTagsString);
-          processedCount++;
-          
-          // Update progress for each customer
-          const currentProgress = i + index + 1;
-          onProgress?.(currentProgress, totalCustomers, skippedCount, `Untagged customer ${currentProgress}/${totalCustomers} (REST)`);
-          
-        } catch (error) {
-          errors.push(`Failed to update customer ${customer.id}: ${error instanceof Error ? error.message : 'Unknown error'}`);
-          skippedCount++;
-          onProgress?.(i + index + 1, totalCustomers, skippedCount, `Failed to untag customer ${i + index + 1}/${totalCustomers}`);
-        }
-      }));
-
-      // Add delay between batches to respect rate limits
-      if (i + batchSize < customers.length) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        onProgress?.(Math.min(i + batchSize, totalCustomers), totalCustomers, skippedCount, `Processed batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(totalCustomers / batchSize)} (REST)`);
-      }
-    }
-
-    onProgress?.(processedCount, totalCustomers, skippedCount, `Completed! Successfully untagged ${processedCount}/${totalCustomers} customers via REST API, skipped ${skippedCount}`);
-
-    return {
-      success: errors.length === 0,
-      processedCount,
-      skippedCount,
-      errors
-    };
-  }
-
-  /**
-   * Batch process tag additions for GraphQL (smaller datasets)
-   */
   private async batchAddTags(
     customerIds: string[], 
     tagsToAdd: string[], 
@@ -1733,6 +1141,180 @@ class ShopifyAPIService {
       skippedCount,
       errors
     };
+  }
+
+  /**
+   * Bulk add tags to all customers in a segment
+   */
+  async bulkAddTagsToSegment(
+    segmentId: number, 
+    tagsToAdd: string[], 
+    onProgress?: (current: number, total: number, skipped: number, message: string) => void,
+    cancellationChecker?: () => boolean
+  ): Promise<{
+    success: boolean;
+    processedCount: number;
+    skippedCount: number;
+    errors: string[];
+  }> {
+    if (!this.isInitialized()) {
+      throw new Error('Shopify API service not initialized');
+    }
+
+    if (!tagsToAdd.length) {
+      throw new Error('No tags provided to add');
+    }
+
+    // Check for cancellation before starting
+    if (cancellationChecker && cancellationChecker()) {
+      return {
+        success: false,
+        processedCount: 0,
+        skippedCount: 0,
+        errors: ['Operation cancelled before starting']
+      };
+    }
+
+    try {
+      return await this.bulkAddTagsToSegmentGraphQL(segmentId, tagsToAdd, onProgress, cancellationChecker);
+    } catch (error) {
+      console.error('Bulk add tags failed:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Bulk remove tags from all customers in a segment
+   */
+  async bulkRemoveTagsFromSegment(
+    segmentId: number, 
+    tagsToRemove: string[], 
+    onProgress?: (current: number, total: number, skipped: number, message: string) => void,
+    cancellationChecker?: () => boolean
+  ): Promise<{
+    success: boolean;
+    processedCount: number;
+    skippedCount: number;
+    errors: string[];
+  }> {
+    if (!this.isInitialized()) {
+      throw new Error('Shopify API service not initialized');
+    }
+
+    if (!tagsToRemove.length) {
+      throw new Error('No tags provided to remove');
+    }
+
+    // Check for cancellation before starting
+    if (cancellationChecker && cancellationChecker()) {
+      return {
+        success: false,
+        processedCount: 0,
+        skippedCount: 0,
+        errors: ['Operation cancelled before starting']
+      };
+    }
+
+    try {
+      return await this.bulkRemoveTagsFromSegmentGraphQL(segmentId, tagsToRemove, onProgress, cancellationChecker);
+    } catch (error) {
+      console.error('Bulk remove tags failed:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * GraphQL implementation for bulk add tags using customer search
+   */
+  private async bulkAddTagsToSegmentGraphQL(
+    segmentId: number, 
+    tagsToAdd: string[], 
+    onProgress?: (current: number, total: number, skipped: number, message: string) => void,
+    cancellationChecker?: () => boolean
+  ): Promise<{
+    success: boolean;
+    processedCount: number;
+    skippedCount: number;
+    errors: string[];
+  }> {
+    // Check for cancellation before starting
+    if (cancellationChecker && cancellationChecker()) {
+      return {
+        success: false,
+        processedCount: 0,
+        skippedCount: 0,
+        errors: ['Operation cancelled before starting']
+      };
+    }
+
+    // Get customer IDs from the segment using customer search
+    onProgress?.(0, 0, 0, 'Searching for customers matching segment criteria...');
+    const customerIds = await this.getSegmentCustomerIds(segmentId);
+    
+    if (!customerIds.length) {
+      return {
+        success: true,
+        processedCount: 0,
+        skippedCount: 0,
+        errors: ['No customers found matching this segment criteria']
+      };
+    }
+
+    // Check for cancellation after getting customer IDs
+    if (cancellationChecker && cancellationChecker()) {
+      return {
+        success: false,
+        processedCount: 0,
+        skippedCount: 0,
+        errors: ['Operation cancelled after fetching customer list']
+      };
+    }
+
+    const totalForProgress = customerIds.length;
+    onProgress?.(0, totalForProgress, 0, `Found ${customerIds.length} customers. Starting tag addition...`);
+
+    // Use batch processing for GraphQL
+    return await this.batchAddTags(
+      customerIds, 
+      tagsToAdd, 
+      onProgress, 
+      totalForProgress, 
+      cancellationChecker
+    );
+  }
+
+  /**
+   * GraphQL implementation for bulk remove tags using customer search
+   */
+  private async bulkRemoveTagsFromSegmentGraphQL(
+    segmentId: number, 
+    tagsToRemove: string[], 
+    onProgress?: (current: number, total: number, skipped: number, message: string) => void,
+    cancellationChecker?: () => boolean
+  ): Promise<{
+    success: boolean;
+    processedCount: number;
+    skippedCount: number;
+    errors: string[];
+  }> {
+    // Get customer IDs from the segment using customer search
+    onProgress?.(0, 0, 0, 'Searching for customers matching segment criteria...');
+    const customerIds = await this.getSegmentCustomerIds(segmentId);
+    
+    if (!customerIds.length) {
+      return {
+        success: true,
+        processedCount: 0,
+        skippedCount: 0,
+        errors: ['No customers found matching this segment criteria']
+      };
+    }
+
+    const totalForProgress = customerIds.length;
+    onProgress?.(0, totalForProgress, 0, `Found ${customerIds.length} customers. Starting tag removal...`);
+
+    // Use batch processing for GraphQL
+    return await this.batchRemoveTags(customerIds, tagsToRemove, onProgress, totalForProgress, cancellationChecker);
   }
 }
 
